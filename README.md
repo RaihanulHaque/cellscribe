@@ -274,7 +274,8 @@ All settings are environment variables in `gateway/.env`.
 | `CELLSCRIBE_DB` | no | `/data/cellscribe.db` | SQLite path inside the container. |
 | `CELLSCRIBE_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
 
-Data persists in the named Docker volume `cellscribe-data`, so restarts keep device registrations and
+Data persists in the compose volume defined in `docker-compose.yml` (Docker prefixes it with the
+project name, so it appears as `gateway_cellscribe-data`), so restarts keep device registrations and
 logs. To reset everything, `docker compose down -v` (this deletes all tokens).
 
 ---
