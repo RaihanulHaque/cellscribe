@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CellScribe Gateway</title>
+<style>
+  :root { color-scheme: light dark; --line: #d7d7de; --muted: #6b6b76; --accent: #2f6f4f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 18px 24px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header span { color: var(--muted); font-size: 13px; }
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  section { margin-bottom: 32px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, button { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; }
+  input[type=text], input[type=password] { min-width: 220px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: #a12b2b; border-color: #d9b3b3; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { font-size: 12px; }
+  .token { margin-top: 10px; padding: 12px; border: 1px solid var(--accent); border-radius: 6px; word-break: break-all; display: none; }
+  .muted { color: var(--muted); }
+  .err { color: #a12b2b; }
+  .ok { color: var(--accent); }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
+  .pill.on { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>CellScribe Gateway</h1>
+  <span>Mistral key stays on the server. Each PC gets its own token.</span>
+</header>
+<main>
+  <section>
+    <h2>Admin access</h2>
+    <div class="row">
+      <input id="adminToken" type="password" placeholder="Admin token" autocomplete="off">
+      <button id="saveToken">Save</button>
+      <span id="authState" class="muted">Not connected</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Register a PC</h2>
+    <div class="row">
+      <input id="deviceName" type="text" placeholder="PC name, e.g. acc-pc-01">
+      <button id="createDevice" class="primary">Create token</button>
+      <span id="createState" class="muted"></span>
+    </div>
+    <div id="modelPicker" class="row" style="margin-top:10px"></div>
+    <div id="tokenBox" class="token"></div>
+  </section>
+
+  <section>
+    <h2>Devices <button id="reloadDevices" style="font-size:12px">Refresh</button></h2>
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Models</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
+      <tbody id="devices"><tr><td colspan="6" class="muted">Connect with the admin token.</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Recent requests <button id="reloadLogs" style="font-size:12px">Refresh</button></h2>
+    <p class="muted" style="font-size:12px;margin-top:0">Metadata only. Prompt and document text are not recorded.</p>
+    <table>
+      <thead><tr><th>Time</th><th>Device</th><th>Model</th><th>Status</th><th>ms</th><th>Tokens in/out</th><th>Error</th></tr></thead>
+      <tbody id="logs"><tr><td colspan="7" class="muted">No requests yet.</td></tr></tbody>
+    </table>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let adminToken = localStorage.getItem("csAdminToken") || "";
+let allowedModels = [];
+
+function headers(extra = {}) {
+  return Object.assign({ "X-Admin-Token": adminToken }, extra);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, Object.assign({}, options, { headers: headers(options.headers || {}) }));
+  if (res.status === 401) throw new Error("Admin token rejected");
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+function fmtTime(ts) {
+  if (!ts) return "never";
+  return new Date(ts * 1000).toLocaleString();
+}
+
+async function loadModels() {
+  allowedModels = await api("/admin/models");
+  $("modelPicker").innerHTML = allowedModels.map((m) =>
+    '<label class="pill"><input type="checkbox" value="' + m + '" checked> ' + m + "</label>"
+  ).join(" ");
+}
+
+async function loadDevices() {
+  const rows = await api("/admin/devices");
+  $("devices").innerHTML = rows.length ? rows.map((d) =>
+    "<tr><td>" + d.id + "</td><td>" + escapeHtml(d.name) + "</td><td>" + escapeHtml(d.models || "all") +
+    "</td><td>" + (d.active ? '<span class="pill on">active</span>' : '<span class="pill">revoked</span>') +
+    "</td><td>" + fmtTime(d.last_seen_at) + "</td><td>" +
+    (d.active ? '<button class="danger" data-revoke="' + d.id + '">Revoke</button>' : "") + "</td></tr>"
+  ).join("") : '<tr><td colspan="6" class="muted">No devices registered.</td></tr>';
+}
+
+async function loadLogs() {
+  const rows = await api("/admin/logs?limit=50");
+  $("logs").innerHTML = rows.length ? rows.map((r) =>
+    "<tr><td>" + fmtTime(r.ts) + "</td><td>" + escapeHtml(r.device_name) + "</td><td>" + escapeHtml(r.model) +
+    "</td><td>" + r.status + "</td><td>" + r.latency_ms + "</td><td>" +
+    (r.prompt_tokens ?? "-") + " / " + (r.completion_tokens ?? "-") +
+    "</td><td>" + escapeHtml(r.error || "") + "</td></tr>"
+  ).join("") : '<tr><td colspan="7" class="muted">No requests yet.</td></tr>';
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function connect() {
+  if (!adminToken) { $("authState").textContent = "Not connected"; $("authState").className = "muted"; return; }
+  try {
+    await loadModels();
+    await loadDevices();
+    await loadLogs();
+    $("authState").textContent = "Connected";
+    $("authState").className = "ok";
+  } catch (err) {
+    $("authState").textContent = err.message;
+    $("authState").className = "err";
+  }
+}
+
+$("saveToken").onclick = () => {
+  adminToken = $("adminToken").value.trim();
+  localStorage.setItem("csAdminToken", adminToken);
+  connect();
+};
+
+$("createDevice").onclick = async () => {
+  const name = $("deviceName").value.trim();
+  if (!name) { $("createState").textContent = "Enter a PC name"; return; }
+  const models = [...document.querySelectorAll("#modelPicker input:checked")].map((el) => el.value);
+  try {
+    const res = await api("/admin/devices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, models }),
+    });
+    $("tokenBox").style.display = "block";
+    $("tokenBox").innerHTML = "<strong>Token for " + escapeHtml(res.name) + "</strong> (shown once)<br><code>" +
+      escapeHtml(res.token) + "</code><br><span class='muted'>Run provision_pc.py with this token.</span>";
+    $("createState").textContent = "Created device " + res.id;
+    $("deviceName").value = "";
+    await loadDevices();
+  } catch (err) {
+    $("createState").textContent = err.message;
+    $("createState").className = "err";
+  }
+};
+
+$("reloadDevices").onclick = () => loadDevices().catch((e) => alert(e.message));
+$("reloadLogs").onclick = () => loadLogs().catch((e) => alert(e.message));
+
+document.addEventListener("click", async (event) => {
+  const id = event.target.getAttribute("data-revoke");
+  if (!id) return;
+  if (!confirm("Revoke device " + id + "? Its token stops working immediately.")) return;
+  try {
+    await api("/admin/devices/" + id + "/revoke", { method: "POST" });
+    await loadDevices();
+  } catch (err) { alert(err.message); }
+});
+
+if (adminToken) { $("adminToken").value = adminToken; connect(); }
+</script>
+</body>
+</html>

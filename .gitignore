@@ -1,0 +1,12 @@
+# Secrets and local state
+.env
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# LibreOffice profile copies must never be committed
+**/libreoffice/*/user/

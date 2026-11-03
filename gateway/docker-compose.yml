@@ -1,0 +1,22 @@
+services:
+  cellscribe-gateway:
+    build: .
+    container_name: cellscribe-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - cellscribe-data:/data
+    # The gateway holds the Mistral key and every device token. Keep it on the
+    # internal network only; do not publish it to the internet.
+    networks:
+      - cellscribe
+
+volumes:
+  cellscribe-data:
+
+networks:
+  cellscribe:
+    driver: bridge
