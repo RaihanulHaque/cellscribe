@@ -9,6 +9,7 @@ services:
       - "8080:8080"
     volumes:
       - cellscribe-data:/data
+      - ../vendor:/app/vendor:ro
     # The gateway holds the Mistral key and every device token. Keep it on the
     # internal network only; do not publish it to the internet.
     networks:

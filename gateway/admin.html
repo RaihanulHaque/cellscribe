@@ -159,7 +159,11 @@ $("createDevice").onclick = async () => {
     });
     $("tokenBox").style.display = "block";
     $("tokenBox").innerHTML = "<strong>Token for " + escapeHtml(res.name) + "</strong> (shown once)<br><code>" +
-      escapeHtml(res.token) + "</code><br><span class='muted'>Run provision_pc.py with this token.</span>";
+      escapeHtml(res.token) + "</code><br><span class='muted'>On the office PC, with LibreOffice closed, run:</span><br><code>curl -fsSL -H \"Authorization: Bearer " +
+      escapeHtml(res.token) + "\" " + location.origin + "/setup.sh | bash</code>" +
+      "<br><br><span class='muted'>No command needed: give the employee this token and the file below (same for every PC). " +
+      "They install it (double-click), restart LibreOffice, then use Tools &gt; CellScribe: Enter access token.</span><br>" +
+      "<a href='/setup/CellScribe.oxt' download>CellScribe.oxt</a>";
     $("createState").textContent = "Created device " + res.id;
     $("deviceName").value = "";
     await loadDevices();

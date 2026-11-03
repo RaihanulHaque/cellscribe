@@ -86,7 +86,7 @@ lets you change model or provider centrally.
 | Gateway network | Reachable from office PCs on the LAN; **do not expose to the internet** |
 | Office PCs | Linux with LibreOffice **24.8 or newer** |
 | Extension | `vendor/WriterAgent.oxt` (included) |
-| Python (for provisioning) | Python 3.8+ on the office PC |
+| Office PC tooling | `bash` and `curl` (Python 3.8+ only if you use `provision_pc.py`) |
 | Mistral | An API key with access to the models you intend to allow |
 
 ### LibreOffice 24.8 is mandatory
@@ -115,7 +115,8 @@ libreoffice --version
 ```
 
 Do not patch the `.oxt` to lower the version requirement. The checksum below is pinned deliberately,
-and the project's policy is to contribute upstream rather than fork.
+and the project's policy is to contribute upstream rather than fork. (The gateway's `CellScribe.oxt`
+only *adds* files to the pinned package; it changes none of WriterAgent's code.)
 
 ---
 
@@ -176,17 +177,48 @@ http://<gateway-ip>:8080/
 Paste the admin token. Register a PC, choose which models it may use, and copy the device token that
 appears — it is shown **once** and only its hash is stored.
 
-### 4. Provision that PC
+### 4. Set up that PC (no Python needed)
 
-On the office PC, as the user who runs LibreOffice:
+The dashboard shows a one-line command next to each new token. On the office PC, with LibreOffice
+closed, paste it:
 
 ```bash
-python3 provision/provision_pc.py \
-  --gateway http://<gateway-ip>:8080 \
-  --token cs_... \
-  --model mistral-small-latest \
-  --install-extension
+curl -fsSL -H "Authorization: Bearer cs_..." http://<gateway-ip>:8080/setup.sh | bash
 ```
+
+The gateway generates a script for that device only. It downloads the extension from the gateway,
+installs it with `unopkg`, and writes `writeragent.json` (merging with `jq` if present, otherwise
+backing up and replacing the file). The PC needs only `bash`, `curl`, and LibreOffice 24.8+. Add
+`?model=mistral-medium-latest` to the URL to pick a different model. Set `CELLSCRIBE_PUBLIC_URL` if
+the gateway is reached under a different address than the one in the request.
+
+#### No command at all: one extension + paste a token
+
+For staff who should only double-click, the gateway serves a single file, identical for every PC and
+containing no secret (no login needed): `http://<gateway-ip>:8080/setup/CellScribe.oxt`.
+
+It is the bundled WriterAgent with a **CellScribe: Enter access token...** menu item added, and the
+gateway URL embedded. The employee:
+
+1. Double-clicks `CellScribe.oxt` (or **Tools > Extension Manager > Add**) and restarts LibreOffice.
+2. Opens **Tools > CellScribe: Enter access token...** and pastes the token the admin gave them.
+
+The extension checks the token against the gateway (a wrong or revoked token is rejected with a
+message), picks the default model from what the device is allowed to use, and writes
+`writeragent.json`. Works on Windows and Linux. The dashboard links the file under each new token.
+
+How it is built: the gateway takes `vendor/WriterAgent.oxt` at request time and adds three files under
+`cellscribe/` plus manifest entries. **WriterAgent's own code is not modified**, but its update feed is
+removed from the package so the Extension Manager cannot replace this build with the upstream one; to
+upgrade, replace `vendor/WriterAgent.oxt` and restart the gateway. It keeps WriterAgent's extension
+identifier, so installing it over an existing WriterAgent upgrades in place.
+
+The Mistral key is never on the PC; the token is the only secret. If a token leaks, revoke that
+device and issue a new one. Share one token per PC, not one for everybody, to keep per-PC revocation
+and the usage log meaningful. For scripted rollouts, the same action accepts a token argument
+(`org.cellscribe.config:SetToken` with a `Token` property), skipping the dialog.
+
+Prefer the Python script? `provision/provision_pc.py` still works and is documented below.
 
 Close and reopen LibreOffice. Test with `=PROMPT("hello")` in a Calc cell. The request should appear
 in the dashboard's request log.
@@ -273,6 +305,7 @@ All settings are environment variables in `gateway/.env`.
 | `CELLSCRIBE_ALLOWED_MODELS` | no | default model | Comma-separated allow-list offered to devices. |
 | `CELLSCRIBE_DB` | no | `/data/cellscribe.db` | SQLite path inside the container. |
 | `CELLSCRIBE_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
+| `CELLSCRIBE_PUBLIC_URL` | no | from request | Gateway URL embedded in generated setup scripts. |
 
 Data persists in the compose volume defined in `docker-compose.yml` (Docker prefixes it with the
 project name, so it appears as `gateway_cellscribe-data`), so restarts keep device registrations and
@@ -289,6 +322,8 @@ Admin endpoints require `X-Admin-Token: <admin-token>`.
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | none | Liveness probe. |
 | `GET` | `/` | none | Admin dashboard HTML. |
+| `GET` | `/setup.sh` | device | Generated installer + config script for that device. |
+| `GET` | `/setup/CellScribe.oxt` | none | WriterAgent plus token entry, gateway URL embedded. |
 | `GET` | `/v1/models` | device | Models this device may use, OpenAI-shaped. |
 | `POST` | `/v1/chat/completions` | device | Proxy to Mistral; supports `stream: true`. |
 | `GET` | `/admin/devices` | admin | List devices (no token hashes). |
@@ -408,6 +443,7 @@ dashboard/ERP integration for device management.
 .
 ├── gateway/
 │   ├── app.py               FastAPI proxy, auth, admin routes
+│   ├── packager.py          Builds CellScribe.oxt from WriterAgent.oxt
 │   ├── store.py             SQLite device registry and request log
 │   ├── admin.html           Single-page admin dashboard
 │   ├── Dockerfile
