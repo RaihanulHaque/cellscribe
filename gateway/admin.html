@@ -109,7 +109,8 @@ async function loadDevices() {
     "<tr><td>" + d.id + "</td><td>" + escapeHtml(d.name) + "</td><td>" + escapeHtml(d.models || "all") +
     "</td><td>" + (d.active ? '<span class="pill on">active</span>' : '<span class="pill">revoked</span>') +
     "</td><td>" + fmtTime(d.last_seen_at) + "</td><td>" +
-    (d.active ? '<button class="danger" data-revoke="' + d.id + '">Revoke</button>' : "") + "</td></tr>"
+    (d.active ? '<button data-models="' + d.id + '" title="Give this PC the models ticked above">Apply ticked models</button> ' +
+      '<button class="danger" data-revoke="' + d.id + '">Revoke</button>' : "") + "</td></tr>"
   ).join("") : '<tr><td colspan="6" class="muted">No devices registered.</td></tr>';
 }
 
@@ -150,7 +151,7 @@ $("saveToken").onclick = () => {
 $("createDevice").onclick = async () => {
   const name = $("deviceName").value.trim();
   if (!name) { $("createState").textContent = "Enter a PC name"; return; }
-  const models = [...document.querySelectorAll("#modelPicker input:checked")].map((el) => el.value);
+  const models = pickedModels();
   try {
     const res = await api("/admin/devices", {
       method: "POST",
@@ -176,7 +177,28 @@ $("createDevice").onclick = async () => {
 $("reloadDevices").onclick = () => loadDevices().catch((e) => alert(e.message));
 $("reloadLogs").onclick = () => loadLogs().catch((e) => alert(e.message));
 
+// All ticked means "every gateway model" (stored empty), so the PC follows
+// later changes to CELLSCRIBE_ALLOWED_MODELS instead of a frozen list.
+function pickedModels() {
+  const boxes = [...document.querySelectorAll("#modelPicker input")];
+  const picked = boxes.filter((el) => el.checked).map((el) => el.value);
+  return picked.length === boxes.length ? [] : picked;
+}
+
 document.addEventListener("click", async (event) => {
+  const modelsId = event.target.getAttribute("data-models");
+  if (modelsId) {
+    const models = pickedModels();
+    try {
+      await api("/admin/devices/" + modelsId + "/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models }),
+      });
+      await loadDevices();
+    } catch (err) { alert(err.message); }
+    return;
+  }
   const id = event.target.getAttribute("data-revoke");
   if (!id) return;
   if (!confirm("Revoke device " + id + "? Its token stops working immediately.")) return;

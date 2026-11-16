@@ -7,10 +7,11 @@ employee pastes their device token once (Tools > CellScribe: Enter access
 token); the extension validates it against the gateway and writes WriterAgent's
 writeragent.json. The Mistral key is never involved.
 
-WriterAgent's own files are not modified. We add our handler and two
-configuration files under cellscribe/, register them in the manifest, and drop
+vendor/WriterAgent.oxt stays untouched. While building we add our handler and
+two configuration files under cellscribe/, register them in the manifest, drop
 WriterAgent's update feed so the Extension Manager cannot swap our package for
-the upstream one.
+the upstream one, and apply the small exact patches in patches.py (Calc sheet
+data in chat context, larger context, bounded tool rounds).
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ import io
 import json
 import re
 import zipfile
+
+import patches
 
 SERVICE = "org.cellscribe.ConfigHandler"
 PROTOCOL = "org.cellscribe.config:"
@@ -278,6 +281,8 @@ def build_oxt(base_oxt: str, endpoint: str, default_model: str) -> bytes:
                 text = data.decode("utf-8")
                 text = re.sub(r"\s*<update-information>.*?</update-information>", "", text, flags=re.S)
                 data = text.encode("utf-8")
+            else:
+                data = patches.apply(item.filename, data)
             out.writestr(item, data)
         out.writestr("cellscribe/ProtocolHandler.xcu", _PROTOCOL_HANDLER % fmt)
         out.writestr("cellscribe/Addons.xcu", _ADDONS % fmt)

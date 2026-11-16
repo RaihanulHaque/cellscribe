@@ -22,16 +22,48 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 import packager
 import store
 
-UPSTREAM_URL = os.environ.get("MISTRAL_BASE_URL", "https://api.mistral.ai/v1").rstrip("/")
-UPSTREAM_KEY = os.environ.get("MISTRAL_API_KEY", "")
-DEFAULT_MODEL = os.environ.get("CELLSCRIBE_DEFAULT_MODEL", "mistral-small-latest")
-ALLOWED_MODELS = [
+def _provider_table() -> dict[str, dict[str, Any]]:
+    """Upstream providers that have a key configured.
+
+    Routing is by model id: ids with a vendor prefix ("deepseek/...",
+    "mistralai/...") go to OpenRouter, bare ids ("mistral-large-latest") go to
+    Mistral directly.
+    """
+    providers: dict[str, dict[str, Any]] = {}
+    mistral_key = os.environ.get("MISTRAL_API_KEY", "").strip()
+    if mistral_key:
+        providers["mistral"] = {
+            "url": os.environ.get("MISTRAL_BASE_URL", "https://api.mistral.ai/v1").rstrip("/"),
+            "key": mistral_key,
+            "headers": {},
+        }
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if openrouter_key:
+        providers["openrouter"] = {
+            "url": os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
+            "key": openrouter_key,
+            # Attribution headers OpenRouter shows in its dashboard.
+            "headers": {"HTTP-Referer": "https://github.com/cellscribe", "X-Title": "CellScribe"},
+        }
+    return providers
+
+
+def provider_for(model: str) -> str:
+    return "openrouter" if "/" in model else "mistral"
+
+
+PROVIDERS = _provider_table()
+DEFAULT_MODEL = os.environ.get("CELLSCRIBE_DEFAULT_MODEL", "deepseek/deepseek-v4.1-flash-1017")
+_configured_models = [
     m.strip()
     for m in os.environ.get("CELLSCRIBE_ALLOWED_MODELS", DEFAULT_MODEL).split(",")
     if m.strip()
 ] or [DEFAULT_MODEL]
-if DEFAULT_MODEL not in ALLOWED_MODELS:
-    ALLOWED_MODELS.append(DEFAULT_MODEL)
+if DEFAULT_MODEL not in _configured_models:
+    _configured_models.insert(0, DEFAULT_MODEL)
+# Offer only models whose provider has a key; anything else would fail upstream.
+ALLOWED_MODELS = [m for m in _configured_models if provider_for(m) in PROVIDERS]
+DROPPED_MODELS = [m for m in _configured_models if m not in ALLOWED_MODELS]
 ADMIN_TOKEN = os.environ.get("CELLSCRIBE_ADMIN_TOKEN", "")
 DB_PATH = os.environ.get("CELLSCRIBE_DB", "/data/cellscribe.db")
 REQUEST_TIMEOUT = float(os.environ.get("CELLSCRIBE_TIMEOUT", "300"))
@@ -45,8 +77,15 @@ client: httpx.AsyncClient | None = None
 @app.on_event("startup")
 async def startup() -> None:
     global client
-    if not UPSTREAM_KEY:
-        raise RuntimeError("MISTRAL_API_KEY is required")
+    if not PROVIDERS:
+        raise RuntimeError("Set OPENROUTER_API_KEY and/or MISTRAL_API_KEY")
+    if not ALLOWED_MODELS:
+        raise RuntimeError(
+            "None of CELLSCRIBE_ALLOWED_MODELS can be served with the configured keys "
+            "(ids with a '/' need OPENROUTER_API_KEY; bare ids need MISTRAL_API_KEY)"
+        )
+    if DROPPED_MODELS:
+        print(f"cellscribe: no provider key for {', '.join(DROPPED_MODELS)}; not offering them", flush=True)
     if not ADMIN_TOKEN:
         raise RuntimeError("CELLSCRIBE_ADMIN_TOKEN is required")
     store.configure(DB_PATH)
@@ -85,8 +124,37 @@ def _require_device(authorization: str = Header(default="")) -> dict[str, Any]:
 
 
 def _models_for_device(device: dict[str, Any]) -> list[str]:
-    allowed = store.device_models(device)
+    """A device's own allow-list (if any), limited to what the gateway can serve."""
+    allowed = [m for m in store.device_models(device) if m in ALLOWED_MODELS]
     return allowed or ALLOWED_MODELS
+
+
+def _upstream_error(status: int, raw: bytes) -> tuple[dict[str, Any], str]:
+    """Readable OpenAI-shaped error from an upstream failure, plus a short log line.
+
+    Provider error bodies describe the request (bad model, context too long,
+    no credit); they never contain our key, so pass the message through.
+    """
+    message = ""
+    try:
+        data = json.loads(raw.decode("utf-8", "ignore") or "{}")
+        err = data.get("error") if isinstance(data, dict) else None
+        if isinstance(err, dict):
+            message = str(err.get("message") or "")
+            meta = err.get("metadata")
+            if isinstance(meta, dict) and meta.get("raw"):
+                message = f"{message}: {meta['raw']}" if message else str(meta["raw"])
+        elif isinstance(err, str):
+            message = err
+        elif isinstance(data, dict):
+            message = str(data.get("message") or data.get("detail") or "")
+    except (ValueError, AttributeError):
+        message = raw.decode("utf-8", "ignore").strip()
+    message = (message or f"HTTP {status}")[:500]
+    return (
+        {"error": {"message": f"Upstream error ({status}): {message}", "type": "upstream_error"}},
+        f"upstream_{status}: {message}"[:200],
+    )
 
 
 @app.get("/healthz")
@@ -112,14 +180,68 @@ TOKEN=__TOKEN__
 MODEL=__MODEL__
 
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
-command -v unopkg >/dev/null || { echo "unopkg not found: install LibreOffice 24.8 or newer" >&2; exit 1; }
-pgrep -x soffice.bin >/dev/null && { echo "Close LibreOffice first, then re-run." >&2; exit 1; }
+if ! command -v unopkg >/dev/null; then
+  echo "unopkg not found: install LibreOffice 24.8 or newer" >&2
+  if command -v flatpak >/dev/null && flatpak info org.libreoffice.LibreOffice >/dev/null 2>&1; then
+    echo "Flatpak LibreOffice found; install the extension by hand instead:" >&2
+    echo "  flatpak run --command=unopkg org.libreoffice.LibreOffice add <CellScribe.oxt>" >&2
+    echo "  then run provision/provision_pc.py with --gateway and --token" >&2
+  fi
+  exit 1
+fi
+
+# A conda/mamba environment on PATH breaks LibreOffice's Python loader: unopkg
+# then mixes conda's stdlib with the system libpython and dies with
+# "std::bad_alloc", even though LibreOffice itself works fine. Put the system
+# directories first, drop conda entries, and clear Python overrides.
+clean_path=$(printf '%s' "${PATH:-}" | tr ':' '\n' \
+  | grep -v -E '/(ana|mini)conda[0-9]*/|/(mini|mamba)forge[0-9]*/|/condabin(/|$)' \
+  | paste -sd: - || true)
+PATH="/usr/local/bin:/usr/bin:/bin${clean_path:+:$clean_path}"
+unset PYTHONHOME PYTHONPATH CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PYTHON_EXE || true
+export PATH
+
+if command -v pgrep >/dev/null && pgrep -x soffice.bin >/dev/null; then
+  echo "Close LibreOffice first, then re-run." >&2; exit 1
+fi
 
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 echo "Downloading WriterAgent extension..."
 curl -fsSL -H "Authorization: Bearer $TOKEN" "$GATEWAY/setup/CellScribe.oxt" -o "$tmp/CellScribe.oxt"
-unopkg remove org.extension.writeragent >/dev/null 2>&1 || true
-unopkg add "$tmp/CellScribe.oxt" || { echo "unopkg add failed (LibreOffice older than 24.8?)" >&2; exit 1; }
+# Install the extension, retrying once if a stale lock blocks LibreOffice.
+install_oxt() {
+  unopkg remove org.extension.writeragent >/dev/null 2>&1 || true
+  unopkg add -f "$tmp/CellScribe.oxt" 2>&1
+}
+
+add_out=$(install_oxt) && add_ok=1 || add_ok=0
+if [ "$add_ok" = 0 ]; then
+  case "$add_out" in
+    *"lock file"*)
+      # No LibreOffice is running (checked above), so the lock is stale: an
+      # earlier session was killed and never removed it. Clear it and retry.
+      echo "Removing a stale LibreOffice lock left by an earlier session..."
+      rm -f "$HOME"/.config/libreoffice/*/.lock 2>/dev/null || true
+      add_out=$(install_oxt) && add_ok=1 || add_ok=0 ;;
+  esac
+fi
+if [ "$add_ok" = 0 ]; then
+  printf '%s\n' "$add_out" >&2
+  case "$add_out" in
+    *bad_alloc*|*Bad_alloc*)
+      echo "hint: LibreOffice's Python loader could not start. That is usually a" >&2
+      echo "      second Python (conda, pyenv, or PYTHONHOME) visible to the shell," >&2
+      echo "      not an outdated LibreOffice. Try: PATH=/usr/bin:/bin bash setup.sh" >&2 ;;
+  esac
+  echo "unopkg add failed. LibreOffice 24.8 or newer is required." >&2
+  exit 1
+fi
+if list_out=$(unopkg list 2>&1); then
+  case "$list_out" in
+    *org.extension.writeragent*) echo "Extension installed and registered." ;;
+    *) echo "warning: extension installed but not listed as registered." >&2 ;;
+  esac
+fi
 
 # The profile only exists after LibreOffice (or unopkg) has run once.
 profile=$(ls -dt "$HOME"/.config/libreoffice/*/user 2>/dev/null | head -n1 || true)
@@ -158,8 +280,13 @@ def _setup_params(request: Request, device: dict[str, Any]) -> tuple[str, str, s
     """Gateway URL, device token and model to embed in a setup script."""
     base = _public_base(request)
     token = request.headers["authorization"].split(" ", 1)[1].strip()
-    model = request.query_params.get("model") or _models_for_device(device)[0]
-    if model not in _models_for_device(device):
+    allowed = _models_for_device(device)
+    # Prefer the gateway default when the device may use it: it is the model
+    # that reliably calls apply_document_content in Writer. Otherwise use the
+    # device's first allowed model.
+    default = DEFAULT_MODEL if DEFAULT_MODEL in allowed else allowed[0]
+    model = request.query_params.get("model") or default
+    if model not in allowed:
         raise HTTPException(status_code=403, detail=f"Model '{model}' is not permitted for this device")
     return base, token, model
 
@@ -226,11 +353,22 @@ async def chat_completions(
     started = time.monotonic()
     store.touch_device(int(device["id"]))
 
+    provider_name = provider_for(model)
+    provider = PROVIDERS[provider_name]
+    if provider_name == "openrouter":
+        # Route only to hosts that support every parameter we send (tools in
+        # particular); otherwise OpenRouter may pick a host that ignores them.
+        prefs = payload.get("provider") if isinstance(payload.get("provider"), dict) else {}
+        payload["provider"] = {"require_parameters": True, **prefs}
+        if stream:
+            payload.setdefault("stream_options", {"include_usage": True})
+
     headers = {
-        "Authorization": f"Bearer {UPSTREAM_KEY}",
+        "Authorization": f"Bearer {provider['key']}",
         "Content-Type": "application/json",
+        **provider["headers"],
     }
-    url = f"{UPSTREAM_URL}/chat/completions"
+    url = f"{provider['url']}/chat/completions"
 
     try:
         if stream:
@@ -239,8 +377,9 @@ async def chat_completions(
                 stream=True,
             )
             if upstream.status_code >= 400:
-                await upstream.aread()
+                raw = await upstream.aread()
                 await upstream.aclose()
+                content, log_error = _upstream_error(upstream.status_code, raw)
                 store.log_request(
                     device_id=int(device["id"]),
                     device_name=device["name"],
@@ -248,12 +387,9 @@ async def chat_completions(
                     status=upstream.status_code,
                     latency_ms=int((time.monotonic() - started) * 1000),
                     stream=True,
-                    error=f"upstream_{upstream.status_code}",
+                    error=log_error,
                 )
-                return JSONResponse(
-                    {"error": {"message": "Upstream request failed", "type": "upstream_error"}},
-                    status_code=upstream.status_code,
-                )
+                return JSONResponse(content, status_code=upstream.status_code)
 
             async def relay() -> Any:
                 usage: dict[str, Any] = {}
@@ -301,6 +437,18 @@ async def chat_completions(
 
         response = await client.post(url, json=payload, headers=headers)
         latency = int((time.monotonic() - started) * 1000)
+        if response.status_code >= 400:
+            content, log_error = _upstream_error(response.status_code, response.content)
+            store.log_request(
+                device_id=int(device["id"]),
+                device_name=device["name"],
+                model=model,
+                status=response.status_code,
+                latency_ms=latency,
+                stream=False,
+                error=log_error,
+            )
+            return JSONResponse(content, status_code=response.status_code)
         usage = {}
         if response.headers.get("content-type", "").startswith("application/json"):
             try:
@@ -349,6 +497,16 @@ async def admin_create_device(request: Request, _: None = Depends(_require_admin
     models = [m for m in (body.get("models") or []) if m in ALLOWED_MODELS]
     device_id, token = store.create_device(name, models)
     return {"id": device_id, "name": name, "models": models, "token": token}
+
+
+@app.post("/admin/devices/{device_id}/models")
+async def admin_set_models(device_id: int, request: Request, _: None = Depends(_require_admin)) -> dict[str, Any]:
+    """Replace a device's model allow-list; an empty list means every gateway model."""
+    body = await request.json()
+    models = [m for m in (body.get("models") or []) if m in ALLOWED_MODELS]
+    if not store.set_device_models(device_id, models):
+        raise HTTPException(status_code=404, detail="Device not found")
+    return {"id": device_id, "models": models}
 
 
 @app.post("/admin/devices/{device_id}/revoke")

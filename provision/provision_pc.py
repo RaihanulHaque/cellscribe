@@ -17,6 +17,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,14 +57,45 @@ def load_config(path: str) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _clean_env() -> dict[str, str]:
+    """Environment for unopkg that only sees the system Python.
+
+    A conda/mamba environment on PATH makes LibreOffice's Python loader mix
+    conda's stdlib with the system libpython; unopkg then dies with
+    std::bad_alloc even though LibreOffice itself works.
+    """
+    env = dict(os.environ)
+    keep = [
+        part
+        for part in env.get("PATH", "").split(os.pathsep)
+        if not re.search(r"/(ana|mini)conda[0-9]*/|/(mini|mamba)forge[0-9]*/|/condabin(/|$)", part)
+    ]
+    env["PATH"] = os.pathsep.join(["/usr/local/bin", "/usr/bin", "/bin", *keep])
+    for name in ("PYTHONHOME", "PYTHONPATH", "CONDA_PREFIX", "CONDA_DEFAULT_ENV", "CONDA_PYTHON_EXE"):
+        env.pop(name, None)
+    return env
+
+
 def install_extension() -> None:
     oxt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vendor", "WriterAgent.oxt")
     oxt = os.path.abspath(oxt)
     if not os.path.exists(oxt):
         raise SystemExit(f"Extension package not found: {oxt}")
     print(f"Installing {oxt}")
-    result = subprocess.run(["unopkg", "add", oxt], check=False)
+    result = subprocess.run(
+        ["unopkg", "add", oxt], check=False, env=_clean_env(), capture_output=True, text=True
+    )
+    output = (result.stdout or "") + (result.stderr or "")
+    if output.strip():
+        print(output.rstrip(), file=sys.stderr if result.returncode else sys.stdout)
     if result.returncode != 0:
+        if "bad_alloc" in output:
+            raise SystemExit(
+                "unopkg could not start LibreOffice's Python loader (std::bad_alloc).\n"
+                "That is usually a second Python (conda, pyenv, PYTHONHOME) on PATH, not an old\n"
+                "LibreOffice. Close LibreOffice and re-run with:\n"
+                "  PATH=/usr/bin:/bin python3 provision_pc.py ..."
+            )
         raise SystemExit("unopkg add failed. Close LibreOffice and retry.")
 
 
@@ -71,7 +103,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway", required=True, help="Gateway base URL, e.g. http://10.0.0.5:8080")
     parser.add_argument("--token", required=True, help="Per-device token from the dashboard")
-    parser.add_argument("--model", default="mistral-small-latest")
+    parser.add_argument("--model", default="deepseek/deepseek-v4.1-flash-1017")
     parser.add_argument("--user", default=os.environ.get("USER", ""), help="Linux user to configure")
     parser.add_argument("--profile", default="", help="Override the LibreOffice profile path")
     parser.add_argument("--install-extension", action="store_true", help="Also run unopkg add")

@@ -125,6 +125,12 @@ def revoke_device(device_id: int) -> bool:
     return cur.rowcount > 0
 
 
+def set_device_models(device_id: int, models: list[str]) -> bool:
+    with _db() as conn:
+        cur = conn.execute("UPDATE devices SET models = ? WHERE id = ?", (",".join(models), device_id))
+    return cur.rowcount > 0
+
+
 def touch_device(device_id: int) -> None:
     with _db() as conn:
         conn.execute(
