@@ -318,6 +318,48 @@ def _cs_progress(func_name: str, func_args: Mapping[str, Any]) -> str:
 
 '''
 
+_DROPPED_PASSAGES = '''
+def _cs_dropped_passages(before, after):
+    """Passages of *before* that a full rewrite lost, or [] when it was not an edit.
+
+    Fuzzy line matching (so fixed typos or a reworded sentence count as kept).
+    Only reports when most of the text survived: a translation or a full
+    restructure changes nearly every line and is not flagged.
+    """
+    import difflib
+    import re as _re
+
+    if not before or after is None:
+        return []
+
+    def lines(text):
+        out = []
+        for raw in text.split("\\n"):
+            norm = _re.sub(r"\\s+", " ", raw).strip()
+            if len(norm) >= 12:
+                out.append(norm)
+        return out
+
+    old, new = lines(before)[:400], lines(after)[:400]
+    if not old or not new:
+        return []
+    new_low = [n.lower() for n in new]
+    joined = " ".join(new_low)
+    lost = []
+    for line in old:
+        low = line.lower()
+        if low in joined:
+            continue
+        if any(difflib.SequenceMatcher(None, low, n).quick_ratio() >= 0.75 and difflib.SequenceMatcher(None, low, n).ratio() >= 0.75 for n in new_low):
+            continue
+        lost.append(line)
+    kept = 1 - len(lost) / len(old)
+    if not lost or kept < 0.6 or len(lost) > 30:
+        return []
+    return [l[:160] for l in lost]
+
+'''
+
 # (old, new) pairs for ChatPanelDialog.xdl: hidden controls move into the
 # Send/Stop/Clear row (top 186) so the layout keeps no empty band below it.
 _XDL_MOVES = [
@@ -496,6 +538,68 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '    parameters: dict[str, Any] | None = {"type": "object", "properties": {"key"',
         ),
     ],
+    # --- Writer: the chat snapshot cut off everything after a table ----------
+    # The excerpt is read by cursor steps, which undercount tables, so text
+    # after them vanished from [DOCUMENT CONTENT] without a truncation note.
+    # Models then "repaired" their own correct minutes by deleting the
+    # sections they could no longer see (DeepSeek and Mistral Large alike).
+    "plugin/doc/document_helpers.py": [
+        (
+            "            take = min(doc_len, max_context)\n"
+            "            excerpt = _text_helpers._read_writer_text_slice(model, 0, take)\n",
+            "            take = min(doc_len, max_context)\n"
+            "            excerpt = _text_helpers._read_writer_text_slice(model, 0, take)\n"
+            "            try:  # CellScribe: fall back to the full text when the cursor read came up short\n"
+            "                _cs_full = model.getText().getString()\n"
+            "                _cs_redlines = model.getRedlines().createEnumeration().hasMoreElements()\n"
+            "            except Exception:\n"
+            "                _cs_full, _cs_redlines = \"\", True\n"
+            "            if not _cs_redlines and len(_cs_full) <= max_context and len(excerpt.strip()) + 5 < len(_cs_full.strip()):\n"
+            "                excerpt = _cs_full\n"
+            "                shown_len = len(_cs_full)\n"
+            "                start_offset = end_offset = 0  # selection markers need cursor offsets\n",
+        ),
+    ],
+    # --- Writer: full rewrites must not silently drop passages ---------------
+    # Measured 4/4: after writing correct minutes, the model re-sent the whole
+    # document without its last sections ("Decision", "Next meeting") and then
+    # claimed nothing was lost. The tool now reports dropped passages.
+    "plugin/writer/apply_document_content.py": [
+        (
+            '        if target == "full_document":\n'
+            "            session = _open_session()\n"
+            "            with session:\n",
+            '        if target == "full_document":\n'
+            "            try:  # CellScribe: remember the text to detect dropped passages\n"
+            "                _cs_before = ctx.doc.getText().getString()\n"
+            "            except Exception:\n"
+            "                _cs_before = None\n"
+            "            session = _open_session()\n"
+            "            with session:\n",
+        ),
+        (
+            '            return {"status": "ok", "message": "Replaced entire document."}, session\n'
+            '        if target == "end":\n',
+            "            _cs_result = {\"status\": \"ok\", \"message\": \"Replaced entire document.\"}\n"
+            "            try:\n"
+            "                _cs_lost = _cs_dropped_passages(_cs_before, ctx.doc.getText().getString())\n"
+            "            except Exception:\n"
+            "                _cs_lost = []\n"
+            "            if _cs_lost:\n"
+            "                _cs_result[\"removed_passages\"] = _cs_lost\n"
+            "                _cs_result[\"message\"] = (\n"
+            "                    \"Replaced entire document, but these passages from the previous version are no longer in it: \"\n"
+            "                    + \" | \".join(_cs_lost)\n"
+            "                    + \". Unless the user asked to remove them, restore them now (insert them where they belong) and do not report the task as done before they are back.\"\n"
+            "                )\n"
+            "            return _cs_result, session\n"
+            '        if target == "end":\n',
+        ),
+        (
+            "\nclass ",
+            _DROPPED_PASSAGES + "\nclass ",
+        ),
+    ],
     # --- Calc: sort_range was a silent no-op ---------------------------------
     # pyuno passes a plain tuple of TableSortField structs as an untyped
     # sequence, which Calc ignores, so sort "succeeded" and changed nothing.
@@ -515,6 +619,28 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     ],
     # --- Calc prompt: answer from the data, batch edits, ordinary formulas -----
     "plugin/framework/prompts.py": [
+        # --- Writer: do the asked work in few calls, no decoration spiral -----
+        # Measured: minutes took 20 rounds / 5 min of colours and custom styles
+        # and replaced a heading with "[REDACTED]"; translation went paragraph
+        # by paragraph (10 calls for a memo), which cuts long documents off.
+        (
+            'WRITER_CHAT_PERSONA = """You are a LibreOffice Writer assistant who produces polished, professional documents with thoughtful use of color and formatting.\n'
+            'Honor any stated memory preferences for color, etc."""\n',
+            'WRITER_CHAT_PERSONA = """You are a LibreOffice Writer assistant for busy office staff: you get exactly the requested work done quickly and correctly, '
+            'in a clean professional style built from the document\'s own named styles (exact names: Title, Heading 1, Heading 2, Text body) and plain tables."""\n',
+        ),
+        (
+            'Follow CHAT RESPONSE FORMAT for that short reply."""\n',
+            'Follow CHAT RESPONSE FORMAT for that short reply.\n'
+            "EFFICIENCY (you get ONE tool call per turn, and a limited number of turns):\n"
+            "- Questions about the document (summarise, explain, who/what/when, find): answer in the sidebar from the document text you already have; do not edit the document.\n"
+            "- New or restructured content (minutes, letters, summaries, reports, tables): write it in ONE apply_document_content call.\n"
+            "- Translation, or rewriting/proofreading a whole document: get_document_content once, then ONE apply_document_content(target='full_document') with the complete result. Never go paragraph by paragraph. "
+            "Only when the document has tables or images, use target='search' edits instead, each spanning as many consecutive paragraphs as possible.\n"
+            "- Formatting: named styles via data-lo-style (Title, Heading1, Heading2) and plain <table>. No custom colours, fonts or new styles unless the user asks for them. Stop once the requested work is done; do not polish.\n"
+            "- Never put placeholders such as [REDACTED], [TBD] or '...' in place of document text; keep every fact from the source.\n"
+            "- After your main write, do not rewrite or delete sections you wrote; a second write is only to fix a tool error or something the user asked for. Meeting dates, times and places, names, numbers and decisions are normal business content, not private data: keep them all. Before you reply, check that every name, number, date, time, place and decision from the source is in the result; never claim nothing was lost unless you checked.\"\"\"\n",
+        ),
         (
             '        return _("AI: I can help you with formulas, data analysis, and colorful charts. Try me!")\n',
             '        return _("Hi, I\'m CellScribe. Ask me to summarise this sheet, answer questions about it, add formulas, sort, format or make a chart.")\n',

@@ -1,16 +1,20 @@
 # CellScribe
 
-Bring large language models into LibreOffice Writer and Calc for an office LAN — without giving
-every employee a copy of the provider's API key.
+AI assistance in LibreOffice **Calc** and **Writer** for an office LAN, in the spirit of
+Gemini in Google Sheets and Docs, without giving any employee a copy of the AI provider's API key.
 
-CellScribe is a small, self-hosted gateway plus a provisioning script. Employees use the
-[WriterAgent](https://github.com/KeithCu/writeragent) extension as normal; the extension talks to a
-gateway on your network, and only the gateway knows the Mistral key.
+CellScribe is a small self-hosted gateway, plus a patched build of the
+[WriterAgent](https://github.com/KeithCu/writeragent) extension that it hands out to office PCs.
+Employees ask questions and give instructions in a sidebar; the extension talks only to the
+gateway, and only the gateway holds the provider key (OpenRouter and/or Mistral).
 
-- **One key, one place.** The provider key lives in the gateway's environment file.
+- **One key, one place.** Provider keys live in the gateway's environment file, never on a PC.
 - **One token per PC.** Each computer gets its own revocable bearer token.
-- **No manual setup per employee.** A script writes the extension's config file.
-- **Usage visibility.** The gateway logs who called which model, when, and whether it worked —
+- **Two-minute PC setup.** Install one `.oxt` file and paste a token, or run one generated script.
+- **Answers you can trust.** Calc sees the whole sheet with exactly computed totals; Writer sees
+  the whole document. Both were tested end to end on realistic office work (see
+  [Tested behaviour](#tested-behaviour)).
+- **Usage visibility.** The gateway logs who called which model, when, and whether it worked,
   without recording document text.
 
 ---
@@ -18,11 +22,15 @@ gateway on your network, and only the gateway knows the Mistral key.
 ## Contents
 
 - [How it works](#how-it-works)
+- [What employees can do](#what-employees-can-do)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
-- [Provisioning an office PC](#provisioning-an-office-pc)
+- [Setting up office PCs](#setting-up-office-pcs)
 - [Verifying the setup](#verifying-the-setup)
 - [Configuration reference](#configuration-reference)
+- [Models and providers](#models-and-providers)
+- [What CellScribe changes in WriterAgent](#what-cellscribe-changes-in-writeragent)
+- [Tested behaviour](#tested-behaviour)
 - [Gateway HTTP API](#gateway-http-api)
 - [Admin dashboard](#admin-dashboard)
 - [Security notes](#security-notes)
@@ -37,46 +45,72 @@ gateway on your network, and only the gateway knows the Mistral key.
 ## How it works
 
 ```text
-   Admin browser                Gateway (this repo)              Mistral
-        │                             │                             │
-        │  register a PC              │                             │
-        ├────────────────────────────►│                             │
-        │  ◄──── device token ────────┤                             │
-        │                             │                             │
-        │                        ┌────┴─────┐                       │
-        │                        │ SQLite   │  devices + request    │
-        │                        │          │  metadata only        │
-        │                        └────┬─────┘                       │
-        │                             │                             │
-   Office PC                          │                             │
-   LibreOffice + WriterAgent          │                             │
-        │  POST /v1/chat/completions  │                             │
-        │  Authorization: Bearer cs_… │                             │
-        ├────────────────────────────►│  adds MISTRAL_API_KEY       │
-        │                             ├────────────────────────────►│
-        │  ◄────── streamed reply ────┤◄────────────────────────────┤
+   Admin browser                Gateway (this repo)                 AI provider
+        │                             │                     (OpenRouter / Mistral)
+        │  register a PC              │                                │
+        ├────────────────────────────►│                                │
+        │  ◄──── device token ────────┤                                │
+        │                        ┌────┴─────┐                          │
+        │                        │ SQLite   │  devices + request       │
+        │                        │          │  metadata only           │
+        │                        └────┬─────┘                          │
+   Office PC                          │                                │
+   LibreOffice + CellScribe.oxt       │                                │
+        │  POST /v1/chat/completions  │                                │
+        │  Authorization: Bearer cs_… │  picks provider by model id,   │
+        ├────────────────────────────►│  adds that provider's key      │
+        │                             ├───────────────────────────────►│
+        │  ◄────── streamed reply ────┤◄───────────────────────────────┤
 ```
 
-1. The admin starts the gateway in Docker and registers each office PC, receiving a device token
-   shown once.
-2. `provision/provision_pc.py` writes that token, the gateway URL, and the model choice into
-   WriterAgent's own config file (`writeragent.json`) in the LibreOffice user profile.
-3. When an employee uses WriterAgent, it sends requests to the gateway with its device token.
-4. The gateway validates the token, checks the model is allowed for that device, picks the provider
-   from the model id (OpenRouter for `vendor/model`, Mistral for bare ids), attaches that provider's
-   key, forwards the request, and streams the answer back.
-5. Metadata about the request is written to SQLite. Prompt and document text are not stored.
+1. The admin starts the gateway in Docker and registers each office PC in the dashboard, receiving
+   a device token that is shown once.
+2. The PC installs `CellScribe.oxt` (served by the gateway) and stores its token, either through a
+   menu item in LibreOffice or a one-line setup script.
+3. When an employee uses the CellScribe sidebar, the extension sends requests to the gateway with
+   its device token.
+4. The gateway validates the token, checks the model is allowed for that PC, chooses the provider
+   from the model id (`vendor/model` → OpenRouter, bare ids → Mistral), attaches that provider's
+   key, forwards the request (retrying brief network failures), and streams the answer back.
+5. Request metadata is written to SQLite. Prompts and document text are not stored.
 
-WriterAgent's config file already supports a custom endpoint and per-endpoint keys, and it re-reads
-`writeragent.json` within a few seconds of a change — so central changes apply without restarting
-LibreOffice. The extension the gateway serves does carry a few small behaviour patches; see
-[WriterAgent patches](#writeragent-patches).
+WriterAgent reads its settings from `writeragent.json` in the LibreOffice profile and re-reads it
+within seconds of a change, so central changes apply without restarting LibreOffice.
 
 ### Why not just put the key on each PC?
 
-Because the key would then live in every employee's home directory in plain text, be copied into
-backups, and be impossible to revoke per person. A gateway makes the key revocable in one place and
-lets you change model or provider centrally.
+The key would then live in every employee's home directory in plain text, be copied into backups,
+and be impossible to revoke per person. A gateway keeps the key in one place, lets you revoke a
+single PC, and lets you change model or provider centrally.
+
+---
+
+## What employees can do
+
+Open the **CellScribe** panel in LibreOffice's right-hand sidebar and type a request.
+
+**In Calc**, for example:
+
+- "Give me a short summary of this sales register for management."
+- "What is the total outstanding amount from unpaid invoices, and which customer owes us the most?"
+- "Add a VAT column (15% of Amount) and a total row."
+- "Sort the data by Amount, highest first." · "Highlight all unpaid invoices in light red."
+- "Make the header bold, format Amount with thousands separators, and freeze the header row."
+- "Get the Rajshahi region's branches and plot the amounts by category."
+
+**In Writer**, for example:
+
+- "Summarise this report." · "Who is responsible for the hatchery project, and what is the deadline?"
+- "Fix all spelling and grammar mistakes." · "Rewrite this paragraph to sound more formal."
+- "Turn these notes into meeting minutes with an action items table."
+- "Write a formal letter to the supplier based on these points."
+- "Translate this report into Bangla." · "Format the section titles as proper headings."
+
+Questions are answered in the sidebar without touching the document. Changes are made with live
+formulas (Calc) and the document's own styles (Writer). Progress shows as plain lines such as
+"• Writing to O1:R6…" and "• Creating the chart…". Each document keeps its own chat history.
+
+Ready-made test files are in [`samples/`](samples/).
 
 ---
 
@@ -85,118 +119,73 @@ lets you change model or provider centrally.
 | Component | Requirement |
 | --- | --- |
 | Gateway host | Any Linux machine with Docker and Docker Compose |
-| Gateway network | Reachable from office PCs on the LAN; **do not expose to the internet** |
-| Office PCs | Linux with LibreOffice **24.8 or newer** |
-| Extension | `vendor/WriterAgent.oxt` (included) |
-| Office PC tooling | `bash` and `curl` (Python 3.8+ only if you use `provision_pc.py`) |
-| Mistral | An API key with access to the models you intend to allow |
+| Gateway network | Reachable from office PCs on the LAN; **do not expose it to the internet** |
+| Office PCs | Linux or Windows with LibreOffice **24.8 or newer** |
+| Office PC tooling | Nothing for the token-entry route; `bash` and `curl` for `setup.sh`; Python 3.8+ only for `provision_pc.py` |
+| AI provider | An [OpenRouter](https://openrouter.ai) key with credit, and/or a Mistral API key |
 
 ### LibreOffice 24.8 is mandatory
 
-WriterAgent declares `LibreOffice-minimal-version 24.8` in its package metadata. If a PC has an older
-version — for example **24.2, which is the default on Ubuntu 24.04 LTS** — installation fails with:
+WriterAgent declares `LibreOffice-minimal-version 24.8`. On an older version, for example
+**24.2, the default on Ubuntu 24.04 LTS**, installation fails with:
 
 ```text
 ERROR: Exception occurred: unsatisfied dependencies at ./desktop/source/deployment/registry/package/dp_package.cxx:614
 ERROR: unopkg failed.
 ```
 
-Check each PC before rolling out:
-
-```bash
-libreoffice --version
-```
-
-Upgrade on Ubuntu 24.04 via the LibreOffice PPA:
+Check each PC with `libreoffice --version`. On Ubuntu 24.04, upgrade through the LibreOffice PPA:
 
 ```bash
 sudo add-apt-repository ppa:libreoffice/ppa
 sudo apt update
 sudo apt install libreoffice
-libreoffice --version
 ```
 
-Do not patch the `.oxt` to lower the version requirement. The checksum below is pinned deliberately,
-and the project's policy is to contribute upstream rather than fork. `vendor/WriterAgent.oxt` stays
-byte-for-byte as pinned; the gateway applies the small patches in `gateway/patches.py` only while it
-builds `CellScribe.oxt` (see [WriterAgent patches](#writeragent-patches)).
+Do not patch the package to lower the version requirement.
 
-### Python on the office PC
+### Conda or pyenv on the office PC
 
-LibreOffice installs and runs Python extensions with its own Python, resolved through `python3` on
-`PATH`. An Anaconda/Miniconda (or pyenv) environment breaks that: `unopkg` mixes the conda standard
-library with the system `libpython` and dies with `std::bad_alloc`, so the extension never installs
-— even though LibreOffice itself starts and works normally.
+LibreOffice runs Python extensions with its own Python, found through `python3` on `PATH`. An
+Anaconda/Miniconda (or pyenv) environment on `PATH` breaks that: `unopkg` dies with
+`std::bad_alloc` and the extension never installs, even though LibreOffice itself works.
 
-The generated `setup.sh` handles this: before calling `unopkg` it puts `/usr/local/bin:/usr/bin:/bin`
-first, drops conda entries from `PATH`, and clears `PYTHONHOME`/`PYTHONPATH`. For manual runs, do
-the same:
+The generated `setup.sh` handles this automatically. For manual installs, use a clean `PATH`:
 
 ```bash
-PATH=/usr/bin:/bin unopkg add CellScribe.oxt
+PATH=/usr/bin:/bin unopkg add -f CellScribe.oxt
 ```
 
-Two habits keep it working: start LibreOffice from the application menu rather than a
-conda-activated terminal, and, if conda is only used interactively,
-`conda config --set auto_activate_base false`.
-
-
-### WriterAgent patches
-
-`gateway/patches.py` applies a few exact search-and-replace patches while the gateway builds
-`CellScribe.oxt`. Each must match exactly once, so a WriterAgent upgrade that changes the code
-underneath fails the build instead of shipping a half-patched extension. What they change and why:
-
-| Patch | WriterAgent default | CellScribe | Why |
-| --- | --- | --- | --- |
-| Calc chat context | sheet size + row 1 only | the active sheet's values as CSV, a column map (letter → header), and an exact per-column profile (sums, min/max, value counts, date ranges), group totals (sum by every category column and by month), and the other sheets' data when it fits; total rows are left out of the figures | The model never saw the data, so summaries were invented or built from 80-cell reads. Models also miscount columns and mis-add 40 rows. |
-| `sort_range` | silently did nothing | sorts | pyuno sent the sort fields as an untyped sequence, which Calc ignores. |
-| `set_style` | no number formats, no freeze panes | `number_format` (e.g. `#,##0`) and `freeze_at` (e.g. `A2`) | Thousands separators and a frozen header are routine office formatting; the model had no way to do either. |
-| Tool arguments | a list sent as a JSON string, or one value per cell for a list of cells, was rejected | accepted | Each rejection cost a full tool round in testing. |
-| Calc prompt | read with tools, compute with `=PY` | answer questions from the data in one reply without writing helper cells; edit in as few calls as possible with ordinary formulas | `=PY` needs a Python environment office PCs don't have. |
-| `read_cell_range` limit | 80 cells | 400 cells | Fewer tool rounds when the model does read. |
-| Chat context size | 8,000 chars | 60,000 chars (~15k tokens) | Lets Writer and Calc see a whole working document. |
-| Tool rounds per message | 15 | 20 | The sidebar runs one tool per model call, so a table plus a chart needs ~10 rounds; 8 cut real tasks off half-done. |
-| Calc prompt tone | "colorful spreadsheets" | requested work first, at most one styling call unless asked, whole tables in one call | Decoration used up to 9 rounds per task and starved the actual request (a chart was never drawn). |
-| Memory | one global `USER.md` added to every prompt | off | A test preference ("rocket engines, deep blue headings") leaked into unrelated documents. Chat history stays per document. |
-| Sidebar UI | raw `[Running tool: …]`, `[Thinking]` reasoning, ~24 controls, "WriterAgent" | plain progress ("• Writing to O1:R6…"), no reasoning text, Ask/Send/Stop/Clear + Settings/menu, "CellScribe" branding and greeting | Office users saw developer output. Model/mode/image pickers, Python, LaTeX, search and voice are hidden, not removed; the admin sets the model. |
-
-Measured on a 40-employee × 31-day attendance `.xlsx`, asking "summarise this sheet, who has the
-worst attendance": before, every Mistral model started reading with tools; after, small, medium and
-large each answered in one call with the exact totals and the correct employee.
+Start LibreOffice from the application menu rather than a conda-activated terminal. If conda is
+only used interactively, `conda config --set auto_activate_base false` avoids the problem entirely.
 
 ---
 
 ## Quick start
 
-### 1. Start the gateway
+### 1. Configure and start the gateway
 
 ```bash
 cd gateway
 cp .env.example .env
 ```
 
-Edit `gateway/.env` and set at least:
+Edit **`gateway/.env`** (Docker reads only this file; a `.env` in the repository root is ignored)
+and set at least:
 
 ```dotenv
-OPENROUTER_API_KEY=your-openrouter-key      # and/or MISTRAL_API_KEY=your-mistral-key
+OPENROUTER_API_KEY=sk-or-v1-...        # and/or MISTRAL_API_KEY=...
 CELLSCRIBE_ADMIN_TOKEN=a-long-random-string
 ```
 
-Docker reads only `gateway/.env`; a `.env` in the repository root is ignored.
-
-Generate the admin token with:
-
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-Then start it:
+Generate the admin token with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
 ```bash
 docker compose up -d --build
 docker compose ps          # expect "healthy"
 ```
+
+After editing `.env` later, apply it with `docker compose up -d --force-recreate`.
 
 ### 2. Find the gateway address
 
@@ -204,78 +193,62 @@ docker compose ps          # expect "healthy"
 hostname -I
 ```
 
-Use the address on the office LAN (for example `192.168.1.20` or `10.0.0.5`). Confirm it works from
-another PC:
+Use the address on the office LAN (for example `192.168.1.20`). From another PC:
 
 ```bash
 curl http://<gateway-ip>:8080/healthz     # {"ok":true}
 ```
 
-If that times out, open the firewall:
+If that times out, open the firewall: `sudo ufw allow 8080/tcp`. Give the gateway a static DHCP
+lease or a DNS name so its address does not change.
 
-```bash
-sudo ufw allow 8080/tcp
-```
+### 3. Register a PC
 
-### 3. Open the dashboard
+Open `http://<gateway-ip>:8080/`, paste the admin token, enter a PC name, and click
+**Create token**. Leave all models ticked unless the PC should be restricted. The token is shown
+**once**; only its hash is stored.
 
-```text
-http://<gateway-ip>:8080/
-```
+### 4. Set up the PC
 
-Paste the admin token. Register a PC, choose which models it may use, and copy the device token that
-appears — it is shown **once** and only its hash is stored.
+See [Setting up office PCs](#setting-up-office-pcs). The quickest route: install `CellScribe.oxt`,
+restart LibreOffice, and paste the token under **Tools → CellScribe: Enter access token…**.
 
-### 4. Set up that PC (no Python needed)
+---
 
-The dashboard shows a one-line command next to each new token. On the office PC, with LibreOffice
-closed, paste it:
+## Setting up office PCs
+
+Close LibreOffice on the PC first. Every route ends in the same state: the extension installed and
+`writeragent.json` pointing at the gateway with that PC's token.
+
+### Option A: install one file and paste a token (no command line)
+
+The gateway serves one extension file, identical for every PC and containing no secret:
+`http://<gateway-ip>:8080/setup/CellScribe.oxt`. The dashboard links it under each new token.
+
+1. Double-click `CellScribe.oxt` (or **Tools → Extension Manager → Add**) and restart LibreOffice.
+2. Open **Tools → CellScribe: Enter access token…** and paste the PC's token.
+
+The extension checks the token with the gateway (a wrong or revoked token is rejected with a
+message), picks the default model from those the PC may use, and writes `writeragent.json`.
+
+For scripted rollouts the same action accepts the token directly
+(`org.cellscribe.config:SetToken` with a `Token` property), skipping the dialog.
+
+### Option B: one command (Linux)
+
+The dashboard shows this command next to each new token:
 
 ```bash
 curl -fsSL -H "Authorization: Bearer cs_..." http://<gateway-ip>:8080/setup.sh | bash
 ```
 
-The gateway generates a script for that device only. It downloads the extension from the gateway,
-installs it with `unopkg`, and writes `writeragent.json` (merging with `jq` if present, otherwise
-backing up and replacing the file). The PC needs only `bash`, `curl`, and LibreOffice 24.8+. It
-writes `CELLSCRIBE_DEFAULT_MODEL` (`deepseek/deepseek-v4.1-flash-1017`); add `?model=…` to the URL to choose
-another. Set `CELLSCRIBE_PUBLIC_URL` if the gateway is reached under a different address than the
-one in the request.
+The script is generated for that device. It downloads `CellScribe.oxt`, installs it with `unopkg`
+(clearing conda from `PATH` and a stale lock if needed), and writes `writeragent.json`, merging with
+`jq` when available and otherwise backing up and replacing the file. It writes the gateway's
+default model; add `?model=<id>` to the URL to choose another. Set `CELLSCRIBE_PUBLIC_URL` if PCs
+reach the gateway under a different address than the one in the request.
 
-#### No command at all: one extension + paste a token
-
-For staff who should only double-click, the gateway serves a single file, identical for every PC and
-containing no secret (no login needed): `http://<gateway-ip>:8080/setup/CellScribe.oxt`.
-
-It is the bundled WriterAgent with a **CellScribe: Enter access token...** menu item added, and the
-gateway URL embedded. The employee:
-
-1. Double-clicks `CellScribe.oxt` (or **Tools > Extension Manager > Add**) and restarts LibreOffice.
-2. Opens **Tools > CellScribe: Enter access token...** and pastes the token the admin gave them.
-
-The extension checks the token against the gateway (a wrong or revoked token is rejected with a
-message), picks the default model from what the device is allowed to use, and writes
-`writeragent.json`. Works on Windows and Linux. The dashboard links the file under each new token.
-
-How it is built: the gateway takes `vendor/WriterAgent.oxt` at request time and adds three files under
-`cellscribe/` plus manifest entries. **WriterAgent's own code is not modified**, but its update feed is
-removed from the package so the Extension Manager cannot replace this build with the upstream one; to
-upgrade, replace `vendor/WriterAgent.oxt` and restart the gateway. It keeps WriterAgent's extension
-identifier, so installing it over an existing WriterAgent upgrades in place.
-
-The Mistral key is never on the PC; the token is the only secret. If a token leaks, revoke that
-device and issue a new one. Share one token per PC, not one for everybody, to keep per-PC revocation
-and the usage log meaningful. For scripted rollouts, the same action accepts a token argument
-(`org.cellscribe.config:SetToken` with a `Token` property), skipping the dialog.
-
-Prefer the Python script? `provision/provision_pc.py` still works and is documented below.
-
-Close and reopen LibreOffice. Test with `=PROMPT("hello")` in a Calc cell. The request should appear
-in the dashboard's request log.
-
----
-
-## Provisioning an office PC
+### Option C: `provision_pc.py`
 
 ```text
 python3 provision/provision_pc.py --gateway URL --token TOKEN [options]
@@ -288,43 +261,34 @@ python3 provision/provision_pc.py --gateway URL --token TOKEN [options]
 | `--model` | `deepseek/deepseek-v4.1-flash-1017` | Model written into the extension config. |
 | `--user` | current user | Linux user whose LibreOffice profile to configure. |
 | `--profile` | auto-detected | Override the profile path, e.g. for Flatpak installs. |
-| `--install-extension` | off | Also run `unopkg add vendor/WriterAgent.oxt` — the unpatched package; prefer the gateway's `CellScribe.oxt`. |
+| `--install-extension` | off | Also run `unopkg add vendor/WriterAgent.oxt`. This is the **unpatched** package; prefer installing the gateway's `CellScribe.oxt`. |
 | `--dry-run` | off | Print the resulting config without writing anything. |
 
-What the script does:
-
-- Finds the newest LibreOffice profile under `~/.config/libreoffice/*/user`.
-- Reads any existing `writeragent.json` and **preserves unrelated settings** such as temperature.
-- Sets `endpoint`, `text_model`, `model`, and the token in `api_keys_by_endpoint`.
-- Backs up the old file to `writeragent.json.bak.<timestamp>`.
-- Writes the file with `0600` permissions.
-
-The Mistral key is never written to the PC. Only the device token is.
+The script finds the newest profile under `~/.config/libreoffice/*/user`, preserves unrelated
+settings in an existing `writeragent.json`, sets `endpoint`, `text_model`, `model` and the token,
+backs up the old file to `writeragent.json.bak.<timestamp>`, and writes it with `0600` permissions.
 
 ### Rolling out to many PCs
 
-`provision_pc.py` is designed to be called by automation rather than typed by hand. Because device
-tokens are per-PC, each machine needs its own token — so the usual pattern is:
-
-1. Register the PCs in the dashboard (or via the admin API) and collect the tokens.
-2. Have your configuration-management tool or login script call the provisioning script with the
-   matching token for that machine.
-
-`unopkg add` installs into the **current user's** profile. If several people share a PC, run the
-script once per user account.
+Tokens are per PC, so register the PCs (dashboard or admin API), collect the tokens, and have your
+configuration-management tool or login script run Option B or C with the matching token.
+`unopkg add` installs into the **current user's** profile; on shared PCs, set up each account.
 
 ### Flatpak LibreOffice
 
-The profile lives elsewhere, and `unopkg` must be invoked through Flatpak:
-
 ```bash
-flatpak run --command=unopkg org.libreoffice.LibreOffice add vendor/WriterAgent.oxt
+flatpak run --command=unopkg org.libreoffice.LibreOffice add CellScribe.oxt
 
 python3 provision/provision_pc.py \
   --gateway http://<gateway-ip>:8080 \
   --token cs_... \
   --profile ~/.var/app/org.libreoffice.LibreOffice/config/libreoffice/4/user
 ```
+
+### Updating PCs
+
+When the gateway is rebuilt with a new `CellScribe.oxt`, reinstall it on each PC with LibreOffice
+closed (`unopkg add -f CellScribe.oxt`, or Option A again). The token and settings are kept.
 
 ---
 
@@ -333,12 +297,14 @@ python3 provision/provision_pc.py \
 From the gateway host:
 
 ```bash
-curl -s http://<gateway-ip>:8080/healthz                       # {"ok":true}
+curl -s http://<gateway-ip>:8080/healthz                                          # {"ok":true}
 curl -s -o /dev/null -w '%{http_code}\n' http://<gateway-ip>:8080/admin/devices   # 401 without a token
 ```
 
-From an office PC, in Calc: enter `=PROMPT("say hello")` in a cell. A reply means the whole chain —
-extension, token, gateway, Mistral — works. The request appears in the dashboard log within seconds.
+On an office PC, open a file from [`samples/`](samples/) (for example `sales_register.csv` in Calc),
+open the **CellScribe** panel and ask "Give me a short summary of this sheet". The request should
+appear in the dashboard's request log within seconds. If it does not, the PC is not using the
+gateway; see [Troubleshooting](#troubleshooting).
 
 ---
 
@@ -351,47 +317,134 @@ All settings are environment variables in `gateway/.env`.
 | `OPENROUTER_API_KEY` | one of the two | — | Serves model ids with a vendor prefix, e.g. `deepseek/deepseek-v4.1-flash-1017`. |
 | `MISTRAL_API_KEY` | one of the two | — | Serves bare Mistral ids, e.g. `mistral-large-latest`. |
 | `CELLSCRIBE_ADMIN_TOKEN` | yes | — | Protects `/admin/*` and the dashboard's data calls. |
+| `CELLSCRIBE_DEFAULT_MODEL` | no | `deepseek/deepseek-v4.1-flash-1017` | Model used when a request names none, and the model new PCs are set to. |
+| `CELLSCRIBE_ALLOWED_MODELS` | no | default model | Comma-separated allow-list offered to PCs. Models whose provider has no key are dropped at startup. |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter base URL. |
-| `MISTRAL_BASE_URL` | no | `https://api.mistral.ai/v1` | Mistral base URL. Point elsewhere to use another OpenAI-compatible provider for bare ids. |
-| `CELLSCRIBE_DEFAULT_MODEL` | no | `deepseek/deepseek-v4.1-flash-1017` | Model used when a request omits one, and the model `setup.sh` writes. |
-| `CELLSCRIBE_ALLOWED_MODELS` | no | default model | Comma-separated allow-list offered to devices. Models whose provider has no key are dropped at startup. |
-
-Routing is by model id: anything containing `/` goes to OpenRouter (which is asked to use only hosts
-that support every request parameter, tools included); anything else goes to Mistral. Provider error
-messages (expired key, no credit, unknown model) are passed through to the client and shown in the
-dashboard log.
-
-A device registered with every model ticked stores "all", so it follows later changes to
-`CELLSCRIBE_ALLOWED_MODELS`. Use **Apply ticked models** in the dashboard (or
-`POST /admin/devices/{id}/models` with `{"models": []}`) to change an existing device.
-| `CELLSCRIBE_DB` | no | `/data/cellscribe.db` | SQLite path inside the container. |
+| `MISTRAL_BASE_URL` | no | `https://api.mistral.ai/v1` | Base URL for bare model ids; point it at another OpenAI-compatible server if needed. |
+| `CELLSCRIBE_RETRIES` | no | `2` | Retries for transient upstream failures (dropped connection, 429/502/503/504) before an error reaches the PC. |
 | `CELLSCRIBE_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
-| `CELLSCRIBE_PUBLIC_URL` | no | from request | Gateway URL embedded in generated setup scripts. |
+| `CELLSCRIBE_PUBLIC_URL` | no | from request | Gateway URL embedded in `setup.sh` and `CellScribe.oxt`. |
+| `CELLSCRIBE_DB` | no | `/data/cellscribe.db` | SQLite path inside the container. |
+| `CELLSCRIBE_OXT` | no | `/app/vendor/WriterAgent.oxt` | Base extension package the gateway patches into `CellScribe.oxt`. |
 
-Data persists in the compose volume defined in `docker-compose.yml` (Docker prefixes it with the
-project name, so it appears as `gateway_cellscribe-data`), so restarts keep device registrations and
-logs. To reset everything, `docker compose down -v` (this deletes all tokens).
+Data persists in the compose volume (it appears as `gateway_cellscribe-data`), so restarts keep
+devices and logs. `docker compose down -v` deletes everything, including all tokens.
+
+---
+
+## Models and providers
+
+Routing is by model id: anything containing `/` goes to OpenRouter, anything else to Mistral.
+OpenRouter is asked to use only hosts that support every request parameter, tools included.
+Provider error messages (expired key, no credit, unknown model) are passed through to the PC and
+shown in the dashboard log.
+
+| Model | Use | Notes |
+| --- | --- | --- |
+| `deepseek/deepseek-v4.1-flash-1017` (OpenRouter) | **Default.** Questions and edits in Calc and Writer | All tests below. About $0.01 per task. |
+| `mistral-large-latest` | Questions and edits | Good results; costs more. |
+| `mistral-medium-latest` | Questions; simple edits | Sometimes skips small details such as headers. |
+| `mistral-small-latest` | Questions only | Accurate answers, but edits land off by one row and it often replies instead of editing. |
+
+A PC registered with every model ticked stores "all" and follows later changes to
+`CELLSCRIBE_ALLOWED_MODELS`. To change an existing PC, tick the models in the dashboard and click
+**Apply ticked models** on its row (or `POST /admin/devices/{id}/models` with `{"models": []}` for
+all). The sidebar's model picker is hidden, so employees cannot switch to a weaker model by
+accident.
+
+---
+
+## What CellScribe changes in WriterAgent
+
+`vendor/WriterAgent.oxt` is kept byte-for-byte as pinned. When a PC downloads `CellScribe.oxt`, the
+gateway builds it from that package: it adds the token-entry menu item (`gateway/packager.py`),
+removes WriterAgent's update feed so the Extension Manager cannot swap the build for upstream, and
+applies the exact search-and-replace patches in `gateway/patches.py`. Each patch must match exactly
+once, so a WriterAgent upgrade that changes the code underneath fails the build instead of shipping
+a half-patched extension. The extension keeps WriterAgent's identifier, so it installs over an
+existing WriterAgent.
+
+| Area | WriterAgent default | CellScribe | Why |
+| --- | --- | --- | --- |
+| Calc: what the model sees | sheet size and row 1 only | the sheet's values as CSV, a column map (letter → header), an exact per-column profile (sums, min/max, counts, date ranges), group totals by category and month, and other sheets when they fit; total rows are excluded from figures | The model never saw the data, so summaries were invented or built from 80-cell reads. Models also miscount wide rows and mis-add long columns. |
+| Calc prompt | read with tools, compute with `=PY`, "colorful spreadsheets" | answer questions from the data in one reply; write whole tables in one call with ordinary formulas; requested work before styling | `=PY` needs Python packages office PCs lack; decoration used up to 9 steps per task and starved the request. |
+| `sort_range` | silently did nothing | sorts | pyuno passed the sort fields as an untyped sequence, which Calc ignores. |
+| `set_style` | no number formats, no freeze panes | `number_format` (e.g. `#,##0`) and `freeze_at` (e.g. `A2`) | Routine office formatting the model could not do at all. |
+| Calc tool arguments | a list sent as a JSON string, or one value per listed cell, was rejected | accepted | Each rejection cost a full step. |
+| `read_cell_range` limit | 80 cells | 400 cells | Fewer steps when the model does read. |
+| Writer: what the model sees | text read by cursor steps, which undercount tables | full text whenever the cursor read comes up short (documents without tracked changes) | Everything after a table was silently missing. Models then "repaired" correct meeting minutes by deleting sections they could not see (0/4 → 4/4 after the fix). |
+| Writer prompt | "thoughtful use of color", no notion of a step budget | requested work first; one write per new part; whole-document translations and rewrites in one write; named styles only; no placeholders; check every fact is kept | Minutes took 20 steps and 5 minutes of colours and custom styles; translation went paragraph by paragraph and would stop half-way on long documents. |
+| Writer full rewrites | no check | the tool reports passages a rewrite dropped (fuzzy match; translations and restructures are not flagged) | A safety net so a rewrite cannot silently lose content. |
+| Context size | 8,000 characters | 60,000 characters (~15k tokens) | Lets the model see a whole working document. |
+| Steps per request | 15 | 20 | The sidebar runs one tool per model call; a table plus a chart needs about 10. |
+| Memory | one global `USER.md` added to every prompt | off | A preference saved in one document leaked into unrelated ones. Chat history stays per document. |
+| Sidebar | raw `[Running tool: …]` lines, model reasoning, ~24 controls, "WriterAgent" | plain progress lines, no reasoning text, Ask/Send/Stop/Clear plus Settings and menu, CellScribe branding and greeting | Office users saw developer output. Model, mode and image pickers, Python, LaTeX, search and voice are hidden, not removed. |
+
+---
+
+## Tested behaviour
+
+Tested on 16 November 2026 with `deepseek/deepseek-v4.1-flash-1017` through the gateway. Each task
+ran through the real WriterAgent agent (same prompt, tools and one-tool-per-call loop as the
+sidebar) in LibreOffice 26.2, on a fresh copy of the file, and the resulting document was checked
+automatically against figures computed from the source data. Several tasks were also run by hand in
+the sidebar.
+
+**Calc** ([`samples/sales_register.csv`](samples/sales_register.csv): 150 invoices, Jan–Mar 2026),
+12 of 12 correct (10 by the automatic checks; the other two were confirmed by hand, see below):
+
+| Task | Steps | Time |
+| --- | --- | --- |
+| Management summary; outstanding dues; filtered count; revenue per month (questions) | 1 each | 2–9 s |
+| VAT and "Total incl. VAT" columns for 150 rows | 6 | 15 s |
+| Totals row | 2 | 5 s |
+| New "Region Summary" sheet with live formulas | 4 | 13 s |
+| Sort by amount, rows kept intact | 2 | 10 s |
+| Highlight the 26 unpaid invoices | 2 | 30 s |
+| Bold header, `#,##0` amounts, frozen header row | 4 | 17 s |
+| Bar chart of revenue by region | 3 | 17 s |
+| A region's branches and amounts by category, with chart | 3 | 24 s |
+
+The two hand-checked results: the management summary gave unpaid invoices as an amount
+(৳2,383,004) where the check looked for the count, and the region breakdown built branch totals
+plus a category table where the check expected a branch × category grid. All figures were exact.
+
+**Writer** ([`samples/`](samples/) `.docx` files), 12 of 12 correct:
+
+| Task | Steps | Time |
+| --- | --- | --- |
+| Summarise a report; answer a question about it | 1 | 2–4 s |
+| Notes → meeting minutes with action table | 2 | 7 s |
+| Letter from bullet points; formal rewrite of one paragraph | 2 | 4–13 s |
+| Proofread a memo (9 planted errors) | 7 | 30 s |
+| Translate a memo / a 2-page report with a table into Bangla | 3 | 10–21 s |
+| Add a risk table in the right section; apply heading styles | 6–8 | 14–32 s |
+| Find and replace across the document | 3 | 8 s |
+| Add an executive summary | 14 | 45 s |
+
+Typical cost: under one US cent per task (all 24 tasks together: about $0.20). Questions are answered without changing the document.
 
 ---
 
 ## Gateway HTTP API
 
-Device endpoints require `Authorization: Bearer <device-token>`.
-Admin endpoints require `X-Admin-Token: <admin-token>`.
+Device endpoints require `Authorization: Bearer <device-token>`; admin endpoints require
+`X-Admin-Token: <admin-token>`.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | none | Liveness probe. |
-| `GET` | `/` | none | Admin dashboard HTML. |
-| `GET` | `/setup.sh` | device | Generated installer + config script for that device. |
-| `GET` | `/setup/CellScribe.oxt` | none | WriterAgent plus token entry, gateway URL embedded. |
+| `GET` | `/` | none | Admin dashboard HTML (its data calls need the admin token). |
+| `GET` | `/setup/CellScribe.oxt` | none | The patched extension with the gateway URL embedded; contains no secret. |
+| `GET` | `/setup.sh` | device | Generated installer and config script for that device. |
 | `GET` | `/v1/models` | device | Models this device may use, OpenAI-shaped. |
-| `POST` | `/v1/chat/completions` | device | Proxy to Mistral; supports `stream: true`. |
+| `POST` | `/v1/chat/completions` | device | Proxied to OpenRouter or Mistral by model id; supports `stream: true`. |
 | `GET` | `/admin/devices` | admin | List devices (no token hashes). |
 | `POST` | `/admin/devices` | admin | Create a device; returns its token once. |
+| `POST` | `/admin/devices/{id}/models` | admin | Replace a device's model allow-list; `[]` means all models. |
 | `POST` | `/admin/devices/{id}/revoke` | admin | Revoke immediately. |
 | `GET` | `/admin/logs?limit=100` | admin | Recent request metadata. |
-| `GET` | `/admin/models` | admin | Configured allow-list. |
+| `GET` | `/admin/models` | admin | Models the gateway can serve. |
 
 Create a device without the dashboard:
 
@@ -399,16 +452,16 @@ Create a device without the dashboard:
 curl -s -X POST http://<gateway-ip>:8080/admin/devices \
   -H "X-Admin-Token: $ADMIN" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"acc-pc-01","models":["mistral-small-latest"]}'
+  -d '{"name":"acc-pc-01","models":[]}'
 ```
 
-The response contains the plaintext `token`. Store it in your management tool; the gateway only keeps
-its SHA-256 hash and cannot show it again.
+The response contains the plaintext `token`. The gateway keeps only its SHA-256 hash and cannot
+show it again.
 
-Errors are returned in OpenAI's shape so LibreOffice surfaces a readable message:
+Errors use OpenAI's shape so LibreOffice shows a readable message, for example:
 
 ```json
-{"error": {"message": "Model 'mistral-large-latest' is not permitted for this device", "type": "gateway_error"}}
+{"error": {"message": "Upstream error (401): API key expired.", "type": "upstream_error"}}
 ```
 
 ---
@@ -417,42 +470,39 @@ Errors are returned in OpenAI's shape so LibreOffice surfaces a readable message
 
 `http://<gateway-ip>:8080/` provides:
 
-- **Register a PC** — name plus model checkboxes; token shown once.
-- **Devices** — status, allowed models, last-seen time, and a revoke button.
-- **Recent requests** — timestamp, device, model, HTTP status, latency, token counts, error summary.
+- **Register a PC**: name plus model checkboxes; the token and setup instructions are shown once.
+- **Devices**: status, allowed models, last-seen time, **Apply ticked models** and **Revoke**.
+- **Recent requests**: time, device, model, HTTP status, latency, token counts and the provider's
+  error message, if any.
 
-The admin token is kept in the browser's `localStorage`, so use a trusted machine. Any browser holding
-that token can create and revoke devices.
+The admin token is kept in the browser's `localStorage`, so use a trusted machine.
 
 ---
 
 ## Security notes
 
-**Treat this as a credential service.**
+**Treat the gateway as a credential service.**
 
-- The gateway holds the provider key and every device token. Keep it on the LAN. Never publish port
+- It holds the provider keys and every device token. Keep it on the LAN and never publish port
   8080 to the internet.
-- Device tokens are bearer tokens. Over plain HTTP, anyone on the LAN can capture one. Put the gateway
-  behind a TLS reverse proxy (Caddy or nginx) or a VPN before real use, then provision with
+- Device tokens are bearer tokens. Over plain HTTP, anyone on the LAN can capture one. Put the
+  gateway behind a TLS reverse proxy (Caddy or nginx) or a VPN before real use, then point PCs at
   `https://…`.
-- **Do not run the gateway on port 11434 or 1234.** WriterAgent treats those ports as Ollama/LM Studio
-  and skips the authorization header. Port 8080 is safe.
-- Revocation takes effect on the device's next request. Revoke immediately if a token leaks, and treat
-  a token pasted into a chat or ticket as leaked.
-- Rotate provider keys by editing `gateway/.env` and running `docker compose up -d`.
-- Request logging is metadata only. Prompts and document text are deliberately not stored. Adding
-  content logging would be a separate policy decision with its own access controls and retention
-  limits.
-- **Document content still goes to the model provider** (OpenRouter and whichever host it routes to,
-  or Mistral). The gateway protects the key, not the content. Confirm
-  company policy allows this before use. A locally hosted model is the only way to keep content on the
-  LAN — point `MISTRAL_BASE_URL` at an OpenAI-compatible local server if you go that way.
+- **Do not run the gateway on port 11434 or 1234.** WriterAgent treats those ports as Ollama/LM
+  Studio and skips the authorization header. Port 8080 is safe.
+- Revocation takes effect on the device's next request. Treat a token pasted into a chat or ticket
+  as leaked.
+- Rotate provider keys by editing `gateway/.env` and running `docker compose up -d --force-recreate`.
+- Request logging is metadata only; prompts and document text are not stored.
+- **Document content still goes to the model provider** (OpenRouter and the host it routes to, or
+  Mistral). The gateway protects the key, not the content. Confirm company policy allows this. To
+  keep content on the LAN, point `MISTRAL_BASE_URL` at a locally hosted OpenAI-compatible model.
+- WriterAgent's MCP server and public tunnel are off by default; leave them off. The MCP server has
+  no authentication.
 
-### Network exposure
-
-The container publishes `0.0.0.0:8080`, so anything that can route to the host can reach it. If you
-need tighter control, bind to one interface (`"172.16.9.119:8080:8080"` in `docker-compose.yml`) or
-allow only the office subnet in the firewall.
+The container publishes `0.0.0.0:8080`. For tighter control, bind one interface
+(`"192.168.1.20:8080:8080"` in `docker-compose.yml`) or allow only the office subnet in the
+firewall.
 
 ---
 
@@ -460,20 +510,21 @@ allow only the office subnet in the firewall.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `unsatisfied dependencies … dp_package.cxx:614` on install | LibreOffice older than 24.8. Run `libreoffice --version` and upgrade. |
-| `C++ code threw St9bad_alloc: std::bad_alloc` on install | A conda/Miniconda (or pyenv) Python on `PATH` — not an old LibreOffice. The generated `setup.sh` strips it; for manual runs use `PATH=/usr/bin:/bin unopkg add CellScribe.oxt`. `conda config --set auto_activate_base false` prevents it. |
-| Extension installs but WriterAgent does nothing | LibreOffice was started from a conda-activated terminal, so its Python loader failed. Quit it, start LibreOffice from the application menu, and retry. |
-| Writer answers in the sidebar but the document stays empty | The model replied instead of calling `apply_document_content`. `mistral-small-latest` does this often in Writer; use `deepseek/deepseek-v4.1-flash-1017`, `mistral-medium-latest` or larger — set it in the dashboard, or re-run setup with `?model=mistral-medium-latest`. |
-| `unopkg add failed. Close LibreOffice and retry.` | LibreOffice is running. Quit it fully (`soffice` process gone) and retry. |
-| `curl` to `/healthz` times out from another PC | Firewall, or wrong IP/interface. `sudo ufw allow 8080/tcp`; re-check `hostname -I`. |
-| Dashboard loads but every action says "Admin token rejected" | Wrong `CELLSCRIBE_ADMIN_TOKEN`, or it was changed after the browser saved the old one. Clear site data and re-enter. |
-| `HTTP 401` from LibreOffice | Device token wrong or revoked. Register a new device and re-provision. |
-| `HTTP 403 … not permitted for this device` | Model not in that device's allow-list. Update the device in the dashboard. |
-| Everything worked yesterday, now connection refused | The gateway's LAN IP changed via DHCP. Set a static lease or use a DNS name. |
-| Extension installed but still asks for a key | Config not written to the right profile. Re-run provisioning without `--install-extension` and check the printed path. |
-| Requests succeed but nothing in the log | The extension may be pointing at Mistral directly. Check `endpoint` in `writeragent.json`. |
-| Container exits at startup | No provider key (`OPENROUTER_API_KEY`/`MISTRAL_API_KEY`), no servable model, or `CELLSCRIBE_ADMIN_TOKEN` missing. Check `docker compose logs`. |
-| Every request fails with `Upstream error (401): API key expired.` | The OpenRouter key expired. Create a new one at openrouter.ai, put it in `gateway/.env`, and run `docker compose up -d`. |
+| `unsatisfied dependencies … dp_package.cxx:614` on install | LibreOffice older than 24.8. Upgrade (see [Requirements](#requirements)). |
+| `std::bad_alloc` on install | A conda or pyenv Python on `PATH`. Use `setup.sh`, or `PATH=/usr/bin:/bin unopkg add -f CellScribe.oxt`. |
+| `unopkg add` fails while LibreOffice is open | Quit LibreOffice fully (`pkill -f soffice.bin`) and retry. |
+| Extension installed, but the sidebar does nothing | LibreOffice was started from a conda-activated terminal. Start it from the application menu. |
+| No requests from a PC in the dashboard log | The PC is not using the gateway: its `endpoint` in `writeragent.json` points straight at a provider. Run **Tools → CellScribe: Enter access token…** again. |
+| "Test connection" succeeds but chatting fails with `API key expired` | Same cause: the PC talks to OpenRouter directly with an old key. OpenRouter lists models without checking the key, so the test passes. Re-enter the token as above. |
+| Every request fails with `Upstream error (401): API key expired` | The gateway's provider key expired. Put a new key in `gateway/.env` and run `docker compose up -d --force-recreate`. |
+| `Upstream error (402)` or a credit message | The OpenRouter account is out of credit or over its key limit. Top up or raise the limit. |
+| `HTTP 401 … Unknown or revoked device token` | Wrong or revoked token. Issue a new one and re-enter it. |
+| `HTTP 403 … not permitted for this device` | The model is not in that PC's allow-list. Use **Apply ticked models** in the dashboard. |
+| The CellScribe panel opens very narrow | Drag its left edge to widen it; LibreOffice remembers the width. |
+| Writer replies in the sidebar but the document is unchanged | The model answered instead of editing. Use the default model or `mistral-large-latest`, not `mistral-small-latest`. |
+| A file opens with a "locked" warning | LibreOffice was killed while the file was open and left `.~lock.<name>#` next to it. With LibreOffice closed, delete that file. |
+| Worked yesterday, now connection refused | The gateway's LAN address changed. Give it a static lease or a DNS name. |
+| Container exits at startup | No provider key, no servable model in `CELLSCRIBE_ALLOWED_MODELS`, or `CELLSCRIBE_ADMIN_TOKEN` missing. Check `docker compose logs`. |
 
 Useful commands:
 
@@ -483,27 +534,29 @@ docker compose ps                       # health and ports
 curl -s http://127.0.0.1:8080/healthz   # from the gateway host
 ```
 
+WriterAgent's own log on a PC is `writeragent_debug.log` in the profile's `user/config` folder.
+
 ---
 
 ## Limitations and roadmap
 
-Current limitations, stated plainly:
+- **Chat only.** Only `/v1/chat/completions` and `/v1/models` are proxied; WriterAgent features that
+  need embeddings, images or audio fail.
+- **No rate limiting or quotas.** Every valid token can spend the whole key's budget; use a spending
+  limit on the provider key.
+- **Plain HTTP by default.** TLS needs the reverse proxy described above.
+- **Long and tracked-change documents.** Writer documents over ~60,000 characters fall back to
+  WriterAgent's head-and-tail excerpt, and documents with tracked changes keep WriterAgent's original
+  reading; neither case was part of the tests.
+- **Mistral's newer models** return replies as "thinking + text" blocks. The tests used DeepSeek; how
+  the sidebar displays Mistral's block replies has not been checked.
+- **Slow cases.** Inserting new text directly before a heading copies the heading's look, and the
+  model then fixes the paragraphs one by one (the 45 s executive summary above). Results are correct.
+- **No device agent.** Setup is a script or a menu item; nothing enrolls PCs, pushes updates or
+  ships logs automatically.
 
-- **Chat only.** Only `/v1/chat/completions` and `/v1/models` are proxied. Embeddings, images, audio,
-  and speech would reach the gateway and fail.
-- **No automated agent yet.** Provisioning is a script you invoke. There is no daemon that enrolls a
-  PC, pushes config changes, or ships logs on its own.
-- **No rate limiting or quotas.** Every device with a valid token can spend the whole key's budget.
-- **Plain HTTP by default.** TLS requires the reverse proxy described above.
-- **Model quality decides whether edits happen.** WriterAgent changes a document only when the
-  model calls its tools. `mistral-small-latest` often answers in the sidebar instead, and in Calc it
-  gets cell ranges off by one row; it is fine for questions, not for edits. Use
-  `deepseek/deepseek-v4.1-flash-1017` (default) or `mistral-large-latest` for editing.
-- **Extension features are partly unverified.** Headless `=PROMPT()` in Calc was verified. Sidebar
-  chat, tool calling, and model-driven document edits were not verified headlessly.
-
-Planned next steps: a small Linux agent that enrolls machines and ships `writeragent_debug.log`, then
-dashboard/ERP integration for device management.
+Planned next: a small agent that enrolls machines and ships `writeragent_debug.log`, and offering the
+WriterAgent fixes (sort, Writer snapshot) upstream.
 
 ---
 
@@ -512,56 +565,55 @@ dashboard/ERP integration for device management.
 ```text
 .
 ├── gateway/
-│   ├── app.py               FastAPI proxy, auth, admin routes
-│   ├── packager.py          Builds CellScribe.oxt from WriterAgent.oxt
+│   ├── app.py               FastAPI proxy: auth, provider routing, retries, admin routes
+│   ├── patches.py           Exact patches applied to WriterAgent when building CellScribe.oxt
+│   ├── packager.py          Builds CellScribe.oxt (token-entry menu item + patches)
 │   ├── store.py             SQLite device registry and request log
 │   ├── admin.html           Single-page admin dashboard
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   ├── requirements.txt
-│   └── .env.example         Template; copy to .env and fill in
+│   └── .env.example         Template; copy to gateway/.env and fill in
 ├── provision/
 │   └── provision_pc.py      Writes writeragent.json for a Linux PC
+├── samples/                 Test files: a sales register (CSV) and five office .docx documents
 ├── vendor/
-│   └── WriterAgent.oxt      Pinned, tested extension package
+│   └── WriterAgent.oxt      Pinned upstream extension package (unmodified)
 └── README.md
 ```
 
-### Tested extension package
+### Pinned extension package
 
 `vendor/WriterAgent.oxt`
 
-- Release tag 0.8.84 (the package itself reports 0.8.85)
+- Release tag 0.8.84 (the package reports 0.8.85)
 - SHA-256 `445e495556b1e67e20b5777eb96c7b6e1cb082a5bd871b4f9f6b46f5f99bf73c`
-- Tested on LibreOffice 24.8.7, Ubuntu 24.10
+- Tested on LibreOffice 24.8.7 (Ubuntu 24.10) and LibreOffice 26.2
 
-The upstream release asset was replaced on 2026-11-01, after the 2026-09-19 release date, so keep this
-copy and test updates before a wider rollout.
+The upstream release asset was replaced on 2026-11-01, after its 2026-09-19 release date, so keep
+this copy. To upgrade, replace the file, rebuild the gateway, and confirm every patch in
+`gateway/patches.py` still applies (the build fails loudly if one does not).
 
 ---
 
 ## Upstream extension notes
 
-CellScribe uses [WriterAgent](https://github.com/KeithCu/writeragent) rather than building its own
-extension. Verified on 2026-11-02: one headless `=PROMPT()` call in Calc through
-`mistral-small-latest` returned the expected text with no cell error.
+CellScribe builds on [WriterAgent](https://github.com/KeithCu/writeragent) rather than its own
+extension.
 
-- Licence: GPL-3.0-or-later. Source-sharing rules apply only when distributing a modified version.
-- Missing features should be contributed upstream rather than forked.
+- Licence: GPL-3.0-or-later. Distributing `CellScribe.oxt` outside your organisation means
+  distributing a modified WriterAgent, so its source (this repository) must be available too.
+- The patches are deliberately small and isolated in `gateway/patches.py`. The bug fixes (sort, the
+  Writer snapshot after tables) are good candidates to contribute upstream.
 - **Why not LibreThinker:** it supports Writer only, and requests made with your own API key send the
   key and document text through `api.librethinker.com`.
-- Leave WriterAgent's MCP server and public tunnel off. Both are off by default, and the MCP server has
-  no authentication.
 
-### Open items carried over from the pilot
+Open items before wider rollout:
 
-- Security review before use with confidential documents. So far: a keyword scan of the package and a
-  headless startup check with no key set, which showed no remote connections.
-- Confirm company policy allows sending document content to Mistral.
-- The extension can download extra tools such as the Harper grammar checker from GitHub. Not yet
-  tested.
-- The debug log shows `_geometric_open_job timed out after 30.0s` in headless runs. Check whether it
-  also appears with a normal window (`writeragent_debug.log` in the profile's `user/config`).
+- A security review before use with confidential documents. So far: a keyword scan of the package
+  and a startup check with no key set, which showed no unexpected remote connections.
+- Confirm company policy allows sending document content to the chosen provider.
+- The extension can download extra tools such as the Harper grammar checker from GitHub; not tested.
 
 ---
 
@@ -569,9 +621,6 @@ extension. Verified on 2026-11-02: one headless `=PROMPT()` call in Calc through
 
 GPL-3.0-or-later. The full text is in [LICENSE](LICENSE).
 
-The bundled WriterAgent extension is also GPL-3.0-or-later, and CellScribe's own files carry matching
-`SPDX-License-Identifier: GPL-3.0-or-later` headers. Source-sharing rules apply only when distributing
-a modified version — running it internally does not trigger them.
-
-The licence choice matches the bundled extension. If your organisation needs different terms for the
-gateway and provisioning code, replace `LICENSE` and the SPDX headers accordingly.
+The bundled WriterAgent extension is also GPL-3.0-or-later, and CellScribe's own files carry
+matching `SPDX-License-Identifier: GPL-3.0-or-later` headers. Running it inside your organisation
+does not trigger the source-sharing rules; distributing it outside does.

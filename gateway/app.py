@@ -8,6 +8,7 @@ token that the gateway validates before proxying the request upstream.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -127,6 +128,36 @@ def _models_for_device(device: dict[str, Any]) -> list[str]:
     """A device's own allow-list (if any), limited to what the gateway can serve."""
     allowed = [m for m in store.device_models(device) if m in ALLOWED_MODELS]
     return allowed or ALLOWED_MODELS
+
+
+# Transient upstream failures worth one more try: OpenRouter occasionally drops
+# a connection mid-response, and hosts briefly return 502/503/504 or 429.
+RETRY_STATUSES = {429, 502, 503, 504}
+RETRY_ATTEMPTS = int(os.environ.get("CELLSCRIBE_RETRIES", "2"))
+
+
+async def _send_with_retry(build: Any, *, stream: bool) -> httpx.Response:
+    """Send a request, retrying transient failures before any byte reaches the client."""
+    last_exc: Exception | None = None
+    for attempt in range(RETRY_ATTEMPTS + 1):
+        try:
+            if stream:
+                response = await client.send(build(), stream=True)
+            else:
+                response = await client.send(build())
+                await response.aread()  # a dropped body raises here, inside the retry
+            if response.status_code in RETRY_STATUSES and attempt < RETRY_ATTEMPTS:
+                await response.aclose()
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            return response
+        except (httpx.TransportError, httpx.RemoteProtocolError) as exc:
+            last_exc = exc
+            if attempt < RETRY_ATTEMPTS:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+    assert last_exc is not None
+    raise last_exc
 
 
 def _upstream_error(status: int, raw: bytes) -> tuple[dict[str, Any], str]:
@@ -372,8 +403,8 @@ async def chat_completions(
 
     try:
         if stream:
-            upstream = await client.send(
-                client.build_request("POST", url, json=payload, headers=headers),
+            upstream = await _send_with_retry(
+                lambda: client.build_request("POST", url, json=payload, headers=headers),
                 stream=True,
             )
             if upstream.status_code >= 400:
@@ -435,7 +466,10 @@ async def chat_completions(
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
 
-        response = await client.post(url, json=payload, headers=headers)
+        response = await _send_with_retry(
+            lambda: client.build_request("POST", url, json=payload, headers=headers),
+            stream=False,
+        )
         latency = int((time.monotonic() - started) * 1000)
         if response.status_code >= 400:
             content, log_error = _upstream_error(response.status_code, response.content)

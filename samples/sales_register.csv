@@ -1,0 +1,151 @@
+Date,Invoice No,Region,Branch,Category,Product,Customer,Qty,Unit,Unit Price,Amount,Payment Status,Salesperson
+2026-01-01,KF-INV-2601142,Khulna,Jashore,Dairy,Fresh Milk,Agora Superstore,368,litre,90,33120,Paid,Kamrul Hasan
+2026-01-02,KF-INV-2601035,Dhaka,Savar,Feed,Layer Feed,Unimart,31,bag,3180,98580,Paid,Tanvir Ahmed
+2026-01-02,KF-INV-2601047,Rajshahi,Natore,Poultry,Broiler Chicken (live),Unimart,723,kg,185,133755,Paid,Sadia Islam
+2026-01-02,KF-INV-2601074,Dhaka,Narayanganj,Feed,Broiler Starter Feed,Meena Bazar,39,bag,3450,134550,Partial,Kamrul Hasan
+2026-01-03,KF-INV-2601068,Rajshahi,Natore,Dairy,Yogurt,Bismillah Poultry Farm,459,kg,240,110160,Paid,Sadia Islam
+2026-01-04,KF-INV-2601088,Chattogram,Hathazari,Processed,Frozen Chicken Nuggets,Daily Fresh Ltd,609,pack,410,249690,Paid,Kamrul Hasan
+2026-01-04,KF-INV-2601140,Chattogram,Hathazari,Feed,Broiler Starter Feed,Agora Superstore,28,bag,3450,96600,Paid,Tanvir Ahmed
+2026-01-05,KF-INV-2601072,Khulna,Satkhira,Dairy,Fresh Milk,Agora Superstore,62,litre,90,5580,Unpaid,Kamrul Hasan
+2026-01-05,KF-INV-2601107,Dhaka,Savar,Feed,Broiler Starter Feed,Meena Bazar,29,bag,3450,100050,Paid,Kamrul Hasan
+2026-01-05,KF-INV-2601117,Khulna,Satkhira,Poultry,Layer Eggs,Green Feed Agency,298,dozen,145,43210,Paid,Mahbub Alam
+2026-01-06,KF-INV-2601105,Khulna,Jashore,Dairy,Fresh Milk,Hotel Sea Pearl,478,litre,90,43020,Paid,Nusrat Jahan
+2026-01-07,KF-INV-2601116,Chattogram,Agrabad,Processed,Frozen Chicken Nuggets,Unimart,889,pack,410,364490,Paid,Mahbub Alam
+2026-01-09,KF-INV-2601147,Khulna,Jashore,Dairy,Yogurt,Daily Fresh Ltd,705,kg,240,169200,Paid,Mahbub Alam
+2026-01-10,KF-INV-2601103,Chattogram,Hathazari,Poultry,Broiler Chicken (live),Daily Fresh Ltd,97,kg,185,17945,Unpaid,Tanvir Ahmed
+2026-01-11,KF-INV-2601100,Dhaka,Savar,Feed,Layer Feed,Agora Superstore,7,bag,3180,22260,Paid,Mahbub Alam
+2026-01-12,KF-INV-2601091,Dhaka,Gazipur,Feed,Broiler Starter Feed,Green Feed Agency,60,bag,3450,207000,Paid,Nusrat Jahan
+2026-01-12,KF-INV-2601114,Chattogram,Hathazari,Poultry,Broiler Chicken (live),Agora Superstore,348,kg,185,64380,Paid,Kamrul Hasan
+2026-01-12,KF-INV-2601144,Khulna,Satkhira,Poultry,Day-Old Chicks,Meena Bazar,177,piece,52,9204,Paid,Sadia Islam
+2026-01-13,KF-INV-2601028,Dhaka,Narayanganj,Feed,Layer Feed,Unimart,57,bag,3180,181260,Unpaid,Tanvir Ahmed
+2026-01-14,KF-INV-2601019,Chattogram,Agrabad,Dairy,Yogurt,Agora Superstore,64,kg,240,15360,Paid,Tanvir Ahmed
+2026-01-14,KF-INV-2601060,Chattogram,Agrabad,Dairy,Fresh Milk,Agora Superstore,546,litre,90,49140,Partial,Sadia Islam
+2026-01-14,KF-INV-2601149,Rajshahi,Natore,Dairy,Yogurt,Bismillah Poultry Farm,854,kg,240,204960,Unpaid,Tanvir Ahmed
+2026-01-15,KF-INV-2601041,Rajshahi,Bogura,Poultry,Broiler Chicken (live),Agora Superstore,788,kg,185,145780,Paid,Tanvir Ahmed
+2026-01-15,KF-INV-2601110,Chattogram,Hathazari,Dairy,Yogurt,Green Feed Agency,877,kg,240,210480,Unpaid,Sadia Islam
+2026-01-15,KF-INV-2601121,Rajshahi,Bogura,Processed,Frozen Chicken Nuggets,Green Feed Agency,613,pack,410,251330,Paid,Tanvir Ahmed
+2026-01-16,KF-INV-2601066,Chattogram,Hathazari,Feed,Layer Feed,Al-Amin Store,26,bag,3180,82680,Paid,Kamrul Hasan
+2026-01-17,KF-INV-2601007,Dhaka,Narayanganj,Feed,Broiler Starter Feed,Daily Fresh Ltd,54,bag,3450,186300,Unpaid,Tanvir Ahmed
+2026-01-17,KF-INV-2601017,Chattogram,Agrabad,Processed,Frozen Chicken Nuggets,Daily Fresh Ltd,652,pack,410,267320,Partial,Kamrul Hasan
+2026-01-17,KF-INV-2601145,Khulna,Jashore,Dairy,Yogurt,Al-Amin Store,821,kg,240,197040,Paid,Sadia Islam
+2026-01-18,KF-INV-2601097,Khulna,Satkhira,Dairy,Fresh Milk,Meena Bazar,549,litre,90,49410,Paid,Mahbub Alam
+2026-01-18,KF-INV-2601102,Khulna,Jashore,Poultry,Day-Old Chicks,Green Feed Agency,376,piece,52,19552,Paid,Tanvir Ahmed
+2026-01-19,KF-INV-2601067,Chattogram,Hathazari,Feed,Broiler Starter Feed,Agora Superstore,26,bag,3450,89700,Paid,Kamrul Hasan
+2026-01-21,KF-INV-2601125,Dhaka,Gazipur,Processed,Frozen Chicken Nuggets,Daily Fresh Ltd,818,pack,410,335380,Paid,Sadia Islam
+2026-01-22,KF-INV-2601087,Rajshahi,Natore,Poultry,Day-Old Chicks,Shwapno Retail,518,piece,52,26936,Paid,Nusrat Jahan
+2026-01-22,KF-INV-2601112,Rajshahi,Natore,Poultry,Layer Eggs,Shwapno Retail,311,dozen,145,45095,Partial,Nusrat Jahan
+2026-01-22,KF-INV-2601130,Khulna,Satkhira,Dairy,Fresh Milk,Daily Fresh Ltd,887,litre,90,79830,Paid,Tanvir Ahmed
+2026-01-22,KF-INV-2601148,Chattogram,Hathazari,Poultry,Layer Eggs,Meena Bazar,408,dozen,145,59160,Paid,Mahbub Alam
+2026-01-23,KF-INV-2601023,Khulna,Jashore,Feed,Broiler Starter Feed,Daily Fresh Ltd,46,bag,3450,158700,Paid,Tanvir Ahmed
+2026-01-23,KF-INV-2601027,Khulna,Satkhira,Feed,Layer Feed,Al-Amin Store,34,bag,3180,108120,Paid,Sadia Islam
+2026-01-23,KF-INV-2601051,Rajshahi,Natore,Poultry,Broiler Chicken (live),Bismillah Poultry Farm,704,kg,185,130240,Paid,Mahbub Alam
+2026-01-23,KF-INV-2601064,Rajshahi,Natore,Dairy,Yogurt,Al-Amin Store,371,kg,240,89040,Paid,Nusrat Jahan
+2026-01-23,KF-INV-2601139,Dhaka,Gazipur,Feed,Broiler Starter Feed,Green Feed Agency,18,bag,3450,62100,Paid,Sadia Islam
+2026-01-24,KF-INV-2601025,Chattogram,Agrabad,Poultry,Day-Old Chicks,Green Feed Agency,727,piece,52,37804,Paid,Mahbub Alam
+2026-01-24,KF-INV-2601026,Khulna,Jashore,Dairy,Yogurt,Rahman Traders,362,kg,240,86880,Paid,Sadia Islam
+2026-01-26,KF-INV-2601015,Dhaka,Savar,Poultry,Layer Eggs,Hotel Sea Pearl,674,dozen,145,97730,Paid,Tanvir Ahmed
+2026-01-26,KF-INV-2601094,Khulna,Jashore,Feed,Broiler Starter Feed,Agora Superstore,52,bag,3450,179400,Paid,Kamrul Hasan
+2026-01-27,KF-INV-2601093,Khulna,Satkhira,Processed,Frozen Chicken Nuggets,Al-Amin Store,421,pack,410,172610,Partial,Mahbub Alam
+2026-01-30,KF-INV-2601008,Khulna,Satkhira,Poultry,Day-Old Chicks,Agora Superstore,543,piece,52,28236,Unpaid,Sadia Islam
+2026-01-31,KF-INV-2601104,Rajshahi,Bogura,Feed,Layer Feed,Al-Amin Store,35,bag,3180,111300,Paid,Nusrat Jahan
+2026-01-31,KF-INV-2601118,Dhaka,Savar,Poultry,Day-Old Chicks,Unimart,225,piece,52,11700,Paid,Mahbub Alam
+2026-02-01,KF-INV-2601123,Rajshahi,Bogura,Poultry,Layer Eggs,Hotel Sea Pearl,436,dozen,145,63220,Partial,Mahbub Alam
+2026-02-01,KF-INV-2601138,Khulna,Satkhira,Dairy,Fresh Milk,Green Feed Agency,869,litre,90,78210,Paid,Kamrul Hasan
+2026-02-02,KF-INV-2601082,Dhaka,Narayanganj,Poultry,Day-Old Chicks,Daily Fresh Ltd,827,piece,52,43004,Partial,Mahbub Alam
+2026-02-03,KF-INV-2601011,Khulna,Satkhira,Dairy,Fresh Milk,Al-Amin Store,254,litre,90,22860,Unpaid,Mahbub Alam
+2026-02-03,KF-INV-2601032,Rajshahi,Bogura,Poultry,Layer Eggs,Green Feed Agency,850,dozen,145,123250,Paid,Nusrat Jahan
+2026-02-03,KF-INV-2601111,Dhaka,Gazipur,Feed,Broiler Starter Feed,Meena Bazar,8,bag,3450,27600,Unpaid,Mahbub Alam
+2026-02-03,KF-INV-2601133,Chattogram,Hathazari,Dairy,Yogurt,Al-Amin Store,760,kg,240,182400,Paid,Nusrat Jahan
+2026-02-04,KF-INV-2601010,Khulna,Satkhira,Feed,Broiler Starter Feed,Meena Bazar,23,bag,3450,79350,Paid,Mahbub Alam
+2026-02-04,KF-INV-2601076,Khulna,Jashore,Poultry,Layer Eggs,Shwapno Retail,78,dozen,145,11310,Partial,Nusrat Jahan
+2026-02-05,KF-INV-2601045,Chattogram,Agrabad,Poultry,Broiler Chicken (live),Green Feed Agency,66,kg,185,12210,Paid,Kamrul Hasan
+2026-02-07,KF-INV-2601055,Dhaka,Narayanganj,Feed,Broiler Starter Feed,Rahman Traders,15,bag,3450,51750,Paid,Kamrul Hasan
+2026-02-07,KF-INV-2601127,Rajshahi,Bogura,Processed,Frozen Chicken Nuggets,Green Feed Agency,673,pack,410,275930,Partial,Tanvir Ahmed
+2026-02-08,KF-INV-2601086,Chattogram,Agrabad,Poultry,Broiler Chicken (live),Meena Bazar,337,kg,185,62345,Partial,Nusrat Jahan
+2026-02-08,KF-INV-2601129,Rajshahi,Natore,Processed,Frozen Chicken Nuggets,Hotel Sea Pearl,795,pack,410,325950,Paid,Sadia Islam
+2026-02-08,KF-INV-2601136,Rajshahi,Bogura,Dairy,Fresh Milk,Unimart,625,litre,90,56250,Unpaid,Mahbub Alam
+2026-02-09,KF-INV-2601009,Khulna,Satkhira,Dairy,Yogurt,Daily Fresh Ltd,735,kg,240,176400,Paid,Sadia Islam
+2026-02-10,KF-INV-2601002,Khulna,Jashore,Processed,Frozen Chicken Nuggets,Rahman Traders,745,pack,410,305450,Paid,Kamrul Hasan
+2026-02-10,KF-INV-2601012,Khulna,Satkhira,Poultry,Broiler Chicken (live),Agora Superstore,347,kg,185,64195,Paid,Sadia Islam
+2026-02-10,KF-INV-2601016,Rajshahi,Natore,Poultry,Day-Old Chicks,Hotel Sea Pearl,55,piece,52,2860,Unpaid,Sadia Islam
+2026-02-10,KF-INV-2601034,Rajshahi,Natore,Poultry,Layer Eggs,Rahman Traders,348,dozen,145,50460,Paid,Tanvir Ahmed
+2026-02-10,KF-INV-2601081,Khulna,Jashore,Dairy,Fresh Milk,Bismillah Poultry Farm,550,litre,90,49500,Unpaid,Nusrat Jahan
+2026-02-11,KF-INV-2601063,Rajshahi,Natore,Feed,Broiler Starter Feed,Daily Fresh Ltd,15,bag,3450,51750,Paid,Kamrul Hasan
+2026-02-11,KF-INV-2601089,Dhaka,Savar,Dairy,Yogurt,Daily Fresh Ltd,208,kg,240,49920,Paid,Tanvir Ahmed
+2026-02-11,KF-INV-2601128,Khulna,Jashore,Poultry,Layer Eggs,Agora Superstore,282,dozen,145,40890,Paid,Sadia Islam
+2026-02-12,KF-INV-2601070,Chattogram,Hathazari,Dairy,Fresh Milk,Green Feed Agency,713,litre,90,64170,Paid,Nusrat Jahan
+2026-02-12,KF-INV-2601071,Dhaka,Savar,Feed,Layer Feed,Hotel Sea Pearl,13,bag,3180,41340,Paid,Sadia Islam
+2026-02-13,KF-INV-2601003,Rajshahi,Natore,Poultry,Layer Eggs,Daily Fresh Ltd,790,dozen,145,114550,Paid,Kamrul Hasan
+2026-02-13,KF-INV-2601124,Chattogram,Hathazari,Poultry,Broiler Chicken (live),Meena Bazar,79,kg,185,14615,Partial,Sadia Islam
+2026-02-14,KF-INV-2601062,Chattogram,Hathazari,Processed,Frozen Chicken Nuggets,Agora Superstore,649,pack,410,266090,Paid,Sadia Islam
+2026-02-14,KF-INV-2601077,Chattogram,Hathazari,Dairy,Fresh Milk,Al-Amin Store,401,litre,90,36090,Paid,Kamrul Hasan
+2026-02-15,KF-INV-2601033,Dhaka,Narayanganj,Poultry,Broiler Chicken (live),Meena Bazar,827,kg,185,152995,Unpaid,Tanvir Ahmed
+2026-02-15,KF-INV-2601049,Rajshahi,Natore,Feed,Broiler Starter Feed,Al-Amin Store,28,bag,3450,96600,Paid,Mahbub Alam
+2026-02-15,KF-INV-2601090,Khulna,Jashore,Poultry,Broiler Chicken (live),Rahman Traders,146,kg,185,27010,Paid,Kamrul Hasan
+2026-02-15,KF-INV-2601122,Khulna,Satkhira,Dairy,Fresh Milk,Hotel Sea Pearl,574,litre,90,51660,Paid,Tanvir Ahmed
+2026-02-16,KF-INV-2601096,Chattogram,Hathazari,Feed,Layer Feed,Al-Amin Store,52,bag,3180,165360,Paid,Mahbub Alam
+2026-02-17,KF-INV-2601079,Rajshahi,Natore,Processed,Frozen Chicken Nuggets,Green Feed Agency,253,pack,410,103730,Paid,Kamrul Hasan
+2026-02-17,KF-INV-2601109,Rajshahi,Bogura,Poultry,Layer Eggs,Hotel Sea Pearl,626,dozen,145,90770,Unpaid,Tanvir Ahmed
+2026-02-19,KF-INV-2601043,Khulna,Jashore,Dairy,Fresh Milk,Green Feed Agency,475,litre,90,42750,Paid,Nusrat Jahan
+2026-02-19,KF-INV-2601054,Dhaka,Gazipur,Poultry,Day-Old Chicks,Rahman Traders,800,piece,52,41600,Paid,Kamrul Hasan
+2026-02-19,KF-INV-2601137,Rajshahi,Natore,Dairy,Fresh Milk,Shwapno Retail,819,litre,90,73710,Paid,Sadia Islam
+2026-02-21,KF-INV-2601048,Dhaka,Gazipur,Poultry,Day-Old Chicks,Bismillah Poultry Farm,813,piece,52,42276,Unpaid,Nusrat Jahan
+2026-02-21,KF-INV-2601131,Chattogram,Agrabad,Feed,Layer Feed,Bismillah Poultry Farm,50,bag,3180,159000,Paid,Nusrat Jahan
+2026-02-22,KF-INV-2601014,Rajshahi,Bogura,Feed,Broiler Starter Feed,Shwapno Retail,52,bag,3450,179400,Paid,Tanvir Ahmed
+2026-02-23,KF-INV-2601006,Khulna,Satkhira,Feed,Layer Feed,Al-Amin Store,59,bag,3180,187620,Paid,Mahbub Alam
+2026-02-23,KF-INV-2601040,Rajshahi,Bogura,Feed,Layer Feed,Shwapno Retail,54,bag,3180,171720,Paid,Mahbub Alam
+2026-02-25,KF-INV-2601039,Rajshahi,Natore,Poultry,Broiler Chicken (live),Rahman Traders,803,kg,185,148555,Partial,Kamrul Hasan
+2026-02-25,KF-INV-2601108,Chattogram,Hathazari,Feed,Layer Feed,Hotel Sea Pearl,54,bag,3180,171720,Unpaid,Tanvir Ahmed
+2026-02-27,KF-INV-2601146,Dhaka,Savar,Processed,Frozen Chicken Nuggets,Agora Superstore,112,pack,410,45920,Paid,Tanvir Ahmed
+2026-02-28,KF-INV-2601073,Rajshahi,Bogura,Feed,Broiler Starter Feed,Hotel Sea Pearl,55,bag,3450,189750,Paid,Kamrul Hasan
+2026-03-01,KF-INV-2601083,Khulna,Jashore,Feed,Broiler Starter Feed,Green Feed Agency,6,bag,3450,20700,Paid,Mahbub Alam
+2026-03-01,KF-INV-2601099,Rajshahi,Natore,Poultry,Layer Eggs,Daily Fresh Ltd,522,dozen,145,75690,Paid,Mahbub Alam
+2026-03-02,KF-INV-2601061,Rajshahi,Natore,Poultry,Layer Eggs,Agora Superstore,406,dozen,145,58870,Partial,Mahbub Alam
+2026-03-02,KF-INV-2601106,Khulna,Jashore,Poultry,Layer Eggs,Al-Amin Store,652,dozen,145,94540,Paid,Mahbub Alam
+2026-03-03,KF-INV-2601013,Rajshahi,Natore,Poultry,Day-Old Chicks,Rahman Traders,485,piece,52,25220,Partial,Sadia Islam
+2026-03-04,KF-INV-2601084,Chattogram,Agrabad,Feed,Layer Feed,Bismillah Poultry Farm,54,bag,3180,171720,Paid,Kamrul Hasan
+2026-03-05,KF-INV-2601092,Chattogram,Agrabad,Feed,Broiler Starter Feed,Meena Bazar,47,bag,3450,162150,Paid,Mahbub Alam
+2026-03-07,KF-INV-2601020,Rajshahi,Natore,Poultry,Broiler Chicken (live),Rahman Traders,76,kg,185,14060,Paid,Sadia Islam
+2026-03-07,KF-INV-2601058,Chattogram,Agrabad,Poultry,Broiler Chicken (live),Shwapno Retail,169,kg,185,31265,Unpaid,Kamrul Hasan
+2026-03-08,KF-INV-2601053,Dhaka,Savar,Dairy,Yogurt,Meena Bazar,601,kg,240,144240,Unpaid,Mahbub Alam
+2026-03-08,KF-INV-2601057,Khulna,Satkhira,Poultry,Day-Old Chicks,Bismillah Poultry Farm,789,piece,52,41028,Paid,Mahbub Alam
+2026-03-08,KF-INV-2601120,Rajshahi,Bogura,Poultry,Day-Old Chicks,Al-Amin Store,630,piece,52,32760,Unpaid,Nusrat Jahan
+2026-03-10,KF-INV-2601052,Rajshahi,Bogura,Poultry,Layer Eggs,Hotel Sea Pearl,68,dozen,145,9860,Paid,Kamrul Hasan
+2026-03-10,KF-INV-2601059,Dhaka,Savar,Feed,Layer Feed,Hotel Sea Pearl,18,bag,3180,57240,Paid,Nusrat Jahan
+2026-03-11,KF-INV-2601029,Dhaka,Savar,Dairy,Fresh Milk,Meena Bazar,467,litre,90,42030,Unpaid,Tanvir Ahmed
+2026-03-11,KF-INV-2601044,Chattogram,Agrabad,Poultry,Broiler Chicken (live),Green Feed Agency,727,kg,185,134495,Unpaid,Kamrul Hasan
+2026-03-12,KF-INV-2601046,Rajshahi,Bogura,Poultry,Layer Eggs,Daily Fresh Ltd,233,dozen,145,33785,Paid,Kamrul Hasan
+2026-03-12,KF-INV-2601085,Khulna,Jashore,Poultry,Day-Old Chicks,Meena Bazar,671,piece,52,34892,Unpaid,Nusrat Jahan
+2026-03-13,KF-INV-2601036,Rajshahi,Bogura,Poultry,Layer Eggs,Bismillah Poultry Farm,752,dozen,145,109040,Paid,Kamrul Hasan
+2026-03-14,KF-INV-2601031,Dhaka,Narayanganj,Feed,Layer Feed,Hotel Sea Pearl,40,bag,3180,127200,Unpaid,Kamrul Hasan
+2026-03-15,KF-INV-2601004,Rajshahi,Natore,Poultry,Day-Old Chicks,Bismillah Poultry Farm,710,piece,52,36920,Paid,Kamrul Hasan
+2026-03-15,KF-INV-2601021,Rajshahi,Bogura,Processed,Frozen Chicken Nuggets,Meena Bazar,527,pack,410,216070,Paid,Nusrat Jahan
+2026-03-16,KF-INV-2601005,Khulna,Satkhira,Poultry,Layer Eggs,Agora Superstore,458,dozen,145,66410,Paid,Sadia Islam
+2026-03-17,KF-INV-2601018,Dhaka,Savar,Poultry,Day-Old Chicks,Green Feed Agency,188,piece,52,9776,Paid,Sadia Islam
+2026-03-17,KF-INV-2601065,Rajshahi,Natore,Dairy,Yogurt,Meena Bazar,872,kg,240,209280,Paid,Sadia Islam
+2026-03-18,KF-INV-2601000,Dhaka,Savar,Poultry,Layer Eggs,Green Feed Agency,278,dozen,145,40310,Paid,Mahbub Alam
+2026-03-18,KF-INV-2601022,Chattogram,Hathazari,Dairy,Fresh Milk,Agora Superstore,519,litre,90,46710,Paid,Mahbub Alam
+2026-03-18,KF-INV-2601132,Dhaka,Gazipur,Dairy,Yogurt,Daily Fresh Ltd,181,kg,240,43440,Paid,Sadia Islam
+2026-03-18,KF-INV-2601141,Chattogram,Hathazari,Poultry,Layer Eggs,Daily Fresh Ltd,518,dozen,145,75110,Paid,Tanvir Ahmed
+2026-03-19,KF-INV-2601037,Khulna,Jashore,Dairy,Yogurt,Al-Amin Store,373,kg,240,89520,Paid,Sadia Islam
+2026-03-19,KF-INV-2601098,Chattogram,Hathazari,Processed,Frozen Chicken Nuggets,Shwapno Retail,436,pack,410,178760,Paid,Mahbub Alam
+2026-03-20,KF-INV-2601001,Khulna,Satkhira,Feed,Broiler Starter Feed,Rahman Traders,5,bag,3450,17250,Paid,Tanvir Ahmed
+2026-03-20,KF-INV-2601126,Dhaka,Gazipur,Poultry,Day-Old Chicks,Meena Bazar,54,piece,52,2808,Paid,Sadia Islam
+2026-03-21,KF-INV-2601134,Chattogram,Hathazari,Poultry,Broiler Chicken (live),Rahman Traders,802,kg,185,148370,Unpaid,Nusrat Jahan
+2026-03-22,KF-INV-2601050,Khulna,Satkhira,Feed,Broiler Starter Feed,Al-Amin Store,15,bag,3450,51750,Paid,Tanvir Ahmed
+2026-03-22,KF-INV-2601056,Chattogram,Hathazari,Feed,Broiler Starter Feed,Hotel Sea Pearl,52,bag,3450,179400,Paid,Sadia Islam
+2026-03-23,KF-INV-2601069,Rajshahi,Bogura,Processed,Frozen Chicken Nuggets,Daily Fresh Ltd,744,pack,410,305040,Partial,Mahbub Alam
+2026-03-23,KF-INV-2601135,Khulna,Jashore,Processed,Frozen Chicken Nuggets,Shwapno Retail,434,pack,410,177940,Paid,Mahbub Alam
+2026-03-24,KF-INV-2601042,Dhaka,Gazipur,Dairy,Fresh Milk,Rahman Traders,661,litre,90,59490,Partial,Tanvir Ahmed
+2026-03-24,KF-INV-2601078,Khulna,Satkhira,Feed,Layer Feed,Shwapno Retail,7,bag,3180,22260,Paid,Sadia Islam
+2026-03-24,KF-INV-2601080,Chattogram,Agrabad,Dairy,Yogurt,Daily Fresh Ltd,116,kg,240,27840,Unpaid,Kamrul Hasan
+2026-03-24,KF-INV-2601095,Chattogram,Agrabad,Poultry,Day-Old Chicks,Green Feed Agency,258,piece,52,13416,Paid,Tanvir Ahmed
+2026-03-24,KF-INV-2601101,Khulna,Jashore,Dairy,Yogurt,Al-Amin Store,868,kg,240,208320,Unpaid,Mahbub Alam
+2026-03-24,KF-INV-2601115,Chattogram,Agrabad,Feed,Layer Feed,Rahman Traders,44,bag,3180,139920,Paid,Tanvir Ahmed
+2026-03-24,KF-INV-2601143,Chattogram,Hathazari,Dairy,Yogurt,Unimart,151,kg,240,36240,Paid,Mahbub Alam
+2026-03-25,KF-INV-2601119,Rajshahi,Natore,Feed,Layer Feed,Agora Superstore,46,bag,3180,146280,Paid,Tanvir Ahmed
+2026-03-28,KF-INV-2601024,Khulna,Jashore,Processed,Frozen Chicken Nuggets,Meena Bazar,778,pack,410,318980,Partial,Mahbub Alam
+2026-03-28,KF-INV-2601075,Chattogram,Hathazari,Feed,Broiler Starter Feed,Rahman Traders,43,bag,3450,148350,Paid,Tanvir Ahmed
+2026-03-29,KF-INV-2601030,Rajshahi,Bogura,Dairy,Fresh Milk,Daily Fresh Ltd,625,litre,90,56250,Paid,Nusrat Jahan
+2026-03-29,KF-INV-2601038,Dhaka,Narayanganj,Dairy,Fresh Milk,Rahman Traders,563,litre,90,50670,Partial,Sadia Islam
+2026-03-30,KF-INV-2601113,Dhaka,Savar,Poultry,Broiler Chicken (live),Daily Fresh Ltd,414,kg,185,76590,Paid,Tanvir Ahmed
