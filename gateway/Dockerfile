@@ -13,7 +13,7 @@ RUN useradd --create-home --shell /usr/sbin/nologin cellscribe \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py store.py packager.py patches.py admin.html ./
+COPY app.py store.py packager.py patches.py admin.html revoked.html requests.html admin.css admin.js ./
 
 USER cellscribe
 

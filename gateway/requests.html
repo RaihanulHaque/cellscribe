@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All requests - CellScribe Gateway</title>
+<link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+<header class="top" id="top"></header>
+<main>
+  <section>
+    <h2>All requests <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">metadata only, prompts and documents are never stored</span></h2>
+    <div class="row" style="margin-bottom:10px">
+      <select id="fDevice"><option value="">All PCs</option></select>
+      <select id="fModel"><option value="">All models</option></select>
+      <select id="fResult">
+        <option value="all">All results</option>
+        <option value="ok">Successful</option>
+        <option value="failed">Failed</option>
+      </select>
+      <select id="fSize" title="Rows per page">
+        <option value="25">25 per page</option>
+        <option value="50" selected>50 per page</option>
+        <option value="100">100 per page</option>
+      </select>
+      <span id="pageInfo" class="muted" style="font-size:12px"></span>
+    </div>
+    <div class="card tablewrap">
+      <table>
+        <thead><tr><th>Time</th><th>PC</th><th>Model</th><th>Status</th><th class="num">Latency</th><th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr></thead>
+        <tbody id="logs"><tr><td colspan="8" class="empty">Connect with the admin token.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="newer" class="small">&larr; Newer</button>
+      <button id="older" class="small">Older &rarr;</button>
+      <span id="pageNo" class="muted" style="font-size:12px"></span>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/assets/admin.js"></script>
+<script>
+let cursors = [null];   // before_id for each page; cursors[0] = newest page
+let page = 0;
+let rows = [];
+let hasMore = false;
+let freshIds = new Set();
+let openIds = new Set();
+let lastTopId = 0;
+
+function query() {
+  const size = Number($("fSize").value);
+  const p = new URLSearchParams({ limit: String(size + 1), result: $("fResult").value });
+  if ($("fDevice").value) p.set("device_id", $("fDevice").value);
+  if ($("fModel").value) p.set("model", $("fModel").value);
+  if (cursors[page]) p.set("before_id", String(cursors[page]));
+  return { size, qs: p.toString() };
+}
+
+async function load() {
+  if (!adminToken) { setAuth(false, "Enter the admin token"); return; }
+  try {
+    const { size, qs } = query();
+    const got = await api("/admin/logs?" + qs);
+    hasMore = got.length > size;
+    rows = got.slice(0, size);
+    // On the newest page, flash rows that arrived since the last refresh.
+    const top = rows.length ? rows[0].id : 0;
+    freshIds = new Set(page === 0 && lastTopId ? rows.filter((r) => r.id > lastTopId).map((r) => r.id) : []);
+    if (page === 0) lastTopId = top;
+    render();
+    setAuth(true, "Connected");
+  } catch (err) {
+    setAuth(false, err.message);
+  }
+}
+
+function render() {
+  $("logs").innerHTML = rows.length ? rows.map((r) => requestRow(r, freshIds.has(r.id), openIds.has(r.id))).join("")
+    : '<tr><td colspan="8" class="empty">No matching requests.</td></tr>';
+  $("older").disabled = !hasMore;
+  $("newer").disabled = page === 0;
+  $("pageNo").textContent = "Page " + (page + 1);
+  $("pageInfo").textContent = rows.length + " rows";
+}
+
+function resetPaging() { cursors = [null]; page = 0; lastTopId = 0; openIds = new Set(); }
+
+async function loadFilters() {
+  const [devices, models] = await Promise.all([api("/admin/devices"), api("/admin/models")]);
+  $("fDevice").innerHTML = '<option value="">All PCs</option>' + devices.map((d) =>
+    "<option value='" + d.id + "'>" + escapeHtml(d.name) + " (#" + d.id + (d.active ? "" : ", revoked") + ")</option>").join("");
+  $("fModel").innerHTML = '<option value="">All models</option>' + models.map((m) =>
+    "<option value='" + escapeHtml(m) + "'>" + escapeHtml(shortModel(m)) + "</option>").join("");
+}
+
+window.refreshAll = async () => { try { await loadFilters(); } catch (e) { setAuth(false, e.message); return; } await load(); };
+
+renderHeader("requests");
+startLive(() => { if (page === 0) load(); }, 5000);   // only the newest page updates itself
+
+["fDevice", "fModel", "fResult", "fSize"].forEach((id) => { $(id).onchange = () => { resetPaging(); load(); }; });
+$("older").onclick = () => { cursors[page + 1] = rows[rows.length - 1].id; page += 1; openIds = new Set(); load(); window.scrollTo(0, 0); };
+$("newer").onclick = () => { page -= 1; openIds = new Set(); load(); window.scrollTo(0, 0); };
+$("logs").onclick = (e) => {
+  const tr = e.target.closest("tr.req");
+  if (!tr) return;
+  const id = Number(tr.getAttribute("data-id"));
+  if (openIds.has(id)) openIds.delete(id); else openIds.add(id);
+  freshIds = new Set();
+  render();
+};
+
+window.refreshAll();
+</script>
+</body>
+</html>

@@ -40,12 +40,26 @@ CREATE TABLE IF NOT EXISTS requests (
     stream            INTEGER NOT NULL DEFAULT 0,
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,
-    error             TEXT
+    error             TEXT,
+    cached_tokens     INTEGER,
+    cache_write_tokens INTEGER,
+    reasoning_tokens  INTEGER,
+    cost              REAL,
+    saved             REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_requests_device ON requests (device_id, ts DESC);
 """
+
+
+_NEW_COLUMNS = (
+    ("cached_tokens", "INTEGER"),
+    ("cache_write_tokens", "INTEGER"),
+    ("reasoning_tokens", "INTEGER"),
+    ("cost", "REAL"),
+    ("saved", "REAL"),
+)
 
 
 def configure(path: str) -> None:
@@ -57,6 +71,14 @@ def configure(path: str) -> None:
         os.makedirs(parent, exist_ok=True)
     with _db() as conn:
         conn.executescript(_SCHEMA)
+        # Databases created before cost tracking get the new columns in place.
+        have = {row["name"] for row in conn.execute("PRAGMA table_info(requests)")}
+        for column, kind in _NEW_COLUMNS:
+            if column not in have:
+                conn.execute(f"ALTER TABLE requests ADD COLUMN {column} {kind}")
+        dev_have = {row["name"] for row in conn.execute("PRAGMA table_info(devices)")}
+        if "revoked_at" not in dev_have:
+            conn.execute("ALTER TABLE devices ADD COLUMN revoked_at REAL")
 
 
 @contextmanager
@@ -104,11 +126,23 @@ def find_device_by_token(token: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def list_devices() -> list[dict[str, Any]]:
-    """Devices without token hashes."""
+def list_devices(active: bool | None = None) -> list[dict[str, Any]]:
+    """Devices without token hashes, with their request count and spend.
+
+    ``active`` filters to live (True) or revoked (False) devices; None returns both.
+    """
+    where, args = "", ()
+    if active is not None:
+        where, args = "WHERE d.active = ?", (1 if active else 0,)
     with _db() as conn:
         rows = conn.execute(
-            "SELECT id, name, models, active, created_at, last_seen_at FROM devices ORDER BY id"
+            f"""SELECT d.id, d.name, d.models, d.active, d.created_at, d.last_seen_at, d.revoked_at,
+                       COUNT(r.id) AS requests, SUM(r.cost) AS cost,
+                       COALESCE(SUM(r.prompt_tokens), 0) AS prompt_tokens,
+                       COALESCE(SUM(r.completion_tokens), 0) AS completion_tokens
+                FROM devices d LEFT JOIN requests r ON r.device_id = d.id
+                {where} GROUP BY d.id ORDER BY d.id""",
+            args,
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -121,7 +155,9 @@ def get_device(device_id: int) -> dict[str, Any] | None:
 
 def revoke_device(device_id: int) -> bool:
     with _db() as conn:
-        cur = conn.execute("UPDATE devices SET active = 0 WHERE id = ?", (device_id,))
+        cur = conn.execute(
+            "UPDATE devices SET active = 0, revoked_at = ? WHERE id = ?", (time.time(), device_id)
+        )
     return cur.rowcount > 0
 
 
@@ -153,13 +189,19 @@ def log_request(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     error: str | None = None,
+    cached_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
+    cost: float | None = None,
+    saved: float | None = None,
 ) -> None:
     with _db() as conn:
         conn.execute(
             """INSERT INTO requests
                (ts, device_id, device_name, model, status, latency_ms, stream,
-                prompt_tokens, completion_tokens, error)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                prompt_tokens, completion_tokens, error,
+                cached_tokens, cache_write_tokens, reasoning_tokens, cost, saved)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 time.time(),
                 device_id,
@@ -171,20 +213,130 @@ def log_request(
                 prompt_tokens,
                 completion_tokens,
                 (error or "")[:500] or None,
+                cached_tokens,
+                cache_write_tokens,
+                reasoning_tokens,
+                cost,
+                saved,
             ),
         )
 
 
-def recent_requests(limit: int = 100, device_id: int | None = None) -> list[dict[str, Any]]:
+def recent_requests(
+    limit: int = 100,
+    device_id: int | None = None,
+    after_id: int | None = None,
+    model: str | None = None,
+    failed: bool | None = None,
+    before_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Newest-first request rows. ``after_id`` / ``before_id`` page by request id."""
     limit = max(1, min(int(limit), 1000))
+    where: list[str] = []
+    args: list[Any] = []
+    if device_id is not None:
+        where.append("device_id = ?")
+        args.append(device_id)
+    if after_id is not None:
+        where.append("id > ?")
+        args.append(after_id)
+    if before_id is not None:
+        where.append("id < ?")
+        args.append(before_id)
+    if model:
+        where.append("model = ?")
+        args.append(model)
+    if failed is True:
+        where.append("status >= 400")
+    elif failed is False:
+        where.append("status < 400")
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
     with _db() as conn:
-        if device_id is None:
-            rows = conn.execute(
-                "SELECT * FROM requests ORDER BY ts DESC LIMIT ?", (limit,)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM requests WHERE device_id = ? ORDER BY ts DESC LIMIT ?",
-                (device_id, limit),
-            ).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM requests {clause} ORDER BY id DESC LIMIT ?", (*args, limit)
+        ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _percentile(sorted_values: list[int], pct: float) -> int | None:
+    if not sorted_values:
+        return None
+    index = min(len(sorted_values) - 1, int(round(pct * (len(sorted_values) - 1))))
+    return sorted_values[index]
+
+
+def stats(since: float, tz_offset_min: int = 0) -> dict[str, Any]:
+    """Aggregate usage and spend for requests at or after ``since`` (epoch seconds).
+
+    ``tz_offset_min`` shifts the daily buckets to the viewer's local time.
+    """
+    offset = int(tz_offset_min) * 60
+    with _db() as conn:
+        total = dict(
+            conn.execute(
+                """SELECT COUNT(*) AS requests,
+                          COALESCE(SUM(status >= 400), 0) AS errors,
+                          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+                          COALESCE(SUM(cached_tokens), 0) AS cached_tokens,
+                          COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+                          COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+                          COALESCE(SUM(cost), 0) AS cost,
+                          COALESCE(SUM(saved), 0) AS saved,
+                          COALESCE(SUM(cost IS NULL AND status < 400 AND prompt_tokens IS NOT NULL), 0) AS unpriced
+                   FROM requests WHERE ts >= ?""",
+                (since,),
+            ).fetchone()
+        )
+        latencies = sorted(
+            row[0]
+            for row in conn.execute(
+                "SELECT latency_ms FROM requests WHERE ts >= ? AND status < 400", (since,)
+            )
+        )
+        by_model = [
+            dict(row)
+            for row in conn.execute(
+                """SELECT model, COUNT(*) AS requests,
+                          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+                          COALESCE(SUM(cached_tokens), 0) AS cached_tokens,
+                          SUM(cost) AS cost,
+                          COALESCE(SUM(saved), 0) AS saved,
+                          COALESCE(SUM(status >= 400), 0) AS errors
+                   FROM requests WHERE ts >= ? GROUP BY model ORDER BY cost DESC, requests DESC""",
+                (since,),
+            )
+        ]
+        by_device = [
+            dict(row)
+            for row in conn.execute(
+                """SELECT device_id, device_name, COUNT(*) AS requests,
+                          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+                          SUM(cost) AS cost,
+                          COALESCE(SUM(status >= 400), 0) AS errors,
+                          MAX(ts) AS last_ts
+                   FROM requests WHERE ts >= ? GROUP BY device_id, device_name
+                   ORDER BY cost DESC, requests DESC""",
+                (since,),
+            )
+        ]
+        by_day = [
+            dict(row)
+            for row in conn.execute(
+                """SELECT strftime('%Y-%m-%d', ts + ?, 'unixepoch') AS day,
+                          COUNT(*) AS requests,
+                          COALESCE(SUM(cost), 0) AS cost,
+                          COALESCE(SUM(saved), 0) AS saved,
+                          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                          COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+                          COALESCE(SUM(cached_tokens), 0) AS cached_tokens
+                   FROM requests WHERE ts >= ? GROUP BY day ORDER BY day""",
+                (offset, since),
+            )
+        ]
+    total["latency_p50"] = _percentile(latencies, 0.5)
+    total["latency_p95"] = _percentile(latencies, 0.95)
+    return {"total": total, "by_model": by_model, "by_device": by_device, "by_day": by_day}
+

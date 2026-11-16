@@ -4,178 +4,223 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CellScribe Gateway</title>
-<style>
-  :root { color-scheme: light dark; --line: #d7d7de; --muted: #6b6b76; --accent: #2f6f4f; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { padding: 18px 24px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
-  header h1 { font-size: 18px; margin: 0; }
-  header span { color: var(--muted); font-size: 13px; }
-  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
-  section { margin-bottom: 32px; }
-  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  input, button { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; }
-  input[type=text], input[type=password] { min-width: 220px; }
-  button { cursor: pointer; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  button.danger { color: #a12b2b; border-color: #d9b3b3; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; }
-  code { font-size: 12px; }
-  .token { margin-top: 10px; padding: 12px; border: 1px solid var(--accent); border-radius: 6px; word-break: break-all; display: none; }
-  .muted { color: var(--muted); }
-  .err { color: #a12b2b; }
-  .ok { color: var(--accent); }
-  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
-  .pill.on { border-color: var(--accent); color: var(--accent); }
-</style>
+<link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body>
-<header>
-  <h1>CellScribe Gateway</h1>
-  <span>Mistral key stays on the server. Each PC gets its own token.</span>
-</header>
+<header class="top" id="top"></header>
 <main>
   <section>
-    <h2>Admin access</h2>
     <div class="row">
-      <input id="adminToken" type="password" placeholder="Admin token" autocomplete="off">
-      <button id="saveToken">Save</button>
-      <span id="authState" class="muted">Not connected</span>
+      <div class="tabs" id="rangeTabs">
+        <button data-range="today">Today</button>
+        <button data-range="24h">24 h</button>
+        <button data-range="7d" class="on">7 days</button>
+        <button data-range="30d">30 days</button>
+        <button data-range="all">All time</button>
+      </div>
+      <span id="statNote" class="muted" style="font-size:12px"></span>
+    </div>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section class="grid2">
+    <div>
+      <h2>Spend per day</h2>
+      <div class="card"><svg id="chart" role="img" aria-label="Spend per day"></svg></div>
+    </div>
+    <div>
+      <h2>Cost by model</h2>
+      <div class="card tablewrap">
+        <table>
+          <thead><tr><th>Model</th><th class="num">Req</th><th class="num">In</th><th class="num">Cached</th><th class="num">Out</th><th class="num">Cost</th><th class="num">Saved</th></tr></thead>
+          <tbody id="byModel"><tr><td colspan="7" class="empty">Connect with the admin token.</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
   <section>
-    <h2>Register a PC</h2>
-    <div class="row">
-      <input id="deviceName" type="text" placeholder="PC name, e.g. acc-pc-01">
-      <button id="createDevice" class="primary">Create token</button>
-      <span id="createState" class="muted"></span>
+    <h2>Recent requests <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">metadata only, prompts and documents are never stored</span></h2>
+    <div class="row" style="margin-bottom:10px">
+      <select id="fDevice"><option value="">All PCs</option></select>
+      <select id="fModel"><option value="">All models</option></select>
+      <select id="fResult">
+        <option value="all">All results</option>
+        <option value="ok">Successful</option>
+        <option value="failed">Failed</option>
+      </select>
+      <span id="reqCount" class="muted" style="font-size:12px"></span>
     </div>
-    <div id="modelPicker" class="row" style="margin-top:10px"></div>
-    <div id="tokenBox" class="token"></div>
+    <div class="card tablewrap">
+      <table>
+        <thead><tr><th>Time</th><th>PC</th><th>Model</th><th>Status</th><th class="num">Latency</th><th class="num">In</th><th class="num">Out</th><th class="num">Cost</th></tr></thead>
+        <tbody id="logs"><tr><td colspan="8" class="empty">No requests yet.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:10px"><a href="/requests">View all requests &rarr;</a></div>
   </section>
 
   <section>
-    <h2>Devices <button id="reloadDevices" style="font-size:12px">Refresh</button></h2>
-    <table>
-      <thead><tr><th>ID</th><th>Name</th><th>Models</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
-      <tbody id="devices"><tr><td colspan="6" class="muted">Connect with the admin token.</td></tr></tbody>
-    </table>
+    <h2>PCs <a href="/revoked" style="text-transform:none;letter-spacing:0;font-weight:400" id="revokedLink"></a></h2>
+    <div class="card tablewrap">
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Models</th><th>Last seen</th><th class="num">Requests</th><th class="num">Spend</th><th></th></tr></thead>
+        <tbody id="devices"><tr><td colspan="7" class="empty">Connect with the admin token.</td></tr></tbody>
+      </table>
+    </div>
   </section>
 
   <section>
-    <h2>Recent requests <button id="reloadLogs" style="font-size:12px">Refresh</button></h2>
-    <p class="muted" style="font-size:12px;margin-top:0">Metadata only. Prompt and document text are not recorded.</p>
-    <table>
-      <thead><tr><th>Time</th><th>Device</th><th>Model</th><th>Status</th><th>ms</th><th>Tokens in/out</th><th>Error</th></tr></thead>
-      <tbody id="logs"><tr><td colspan="7" class="muted">No requests yet.</td></tr></tbody>
-    </table>
+    <details class="card" id="registerBox">
+      <summary>Register a PC</summary>
+      <div class="row" style="margin-top:12px">
+        <input id="deviceName" type="text" placeholder="PC name, e.g. acc-pc-01" style="min-width:240px">
+        <button id="createDevice" class="primary">Create token</button>
+        <span id="createState" class="muted"></span>
+      </div>
+      <div id="modelPicker" class="row" style="margin-top:10px"></div>
+      <div id="tokenBox" class="token"></div>
+    </details>
   </section>
 </main>
+<div id="toast"></div>
+<script src="/assets/admin.js"></script>
 <script>
-const $ = (id) => document.getElementById(id);
-let adminToken = localStorage.getItem("csAdminToken") || "";
+let range = "7d";
+let rows = [];           // request rows currently shown, newest first
+let seenMaxId = 0;       // highest request id already rendered
+let freshIds = new Set();
+let openIds = new Set(); // expanded detail rows
 let allowedModels = [];
+let deviceList = [];
+const PAGE = 50;
+const LATEST = 10;   // the dashboard shows the newest few; /requests has the full list
 
-function headers(extra = {}) {
-  return Object.assign({ "X-Admin-Token": adminToken }, extra);
+
+// ---------- stats ----------
+async function loadStats() {
+  const tz = -new Date().getTimezoneOffset();
+  const s = await api("/admin/stats?range=" + range + "&tz=" + tz);
+  const t = s.total;
+  const hit = pct(t.cached_tokens, t.prompt_tokens);
+  const priced = t.requests - t.errors - t.unpriced;
+  const avg = priced > 0 ? money(t.cost / priced) + " per priced request" : "no priced requests yet";
+  const errPct = t.requests ? ((t.errors / t.requests) * 100).toFixed(1) + "% failed" : "no requests yet";
+  const saved = t.saved > 0 ? "saved about <b>" + money(t.saved) + "</b>" : (t.cached_tokens ? "savings need a price list" : "no cache hits yet");
+  $("kpis").innerHTML = [
+    kpi("Spend", money(t.cost), avg),
+    kpi("Requests", t.requests.toLocaleString(), errPct),
+    kpi("Tokens in / out", num(t.prompt_tokens) + " / " + num(t.completion_tokens),
+        t.reasoning_tokens ? num(t.reasoning_tokens) + " reasoning" : "all models"),
+    kpi("Cache hit rate", hit, num(t.cached_tokens) + " cached tokens, " + saved),
+    kpi("Latency", t.latency_p50 === null ? "—" : (t.latency_p50 / 1000).toFixed(1) + " s",
+        t.latency_p95 === null ? "median" : "median, p95 " + (t.latency_p95 / 1000).toFixed(1) + " s"),
+  ].join("");
+  $("statNote").textContent = t.unpriced ? t.unpriced + " requests have no recorded cost (logged before cost tracking, or the model has no price in CELLSCRIBE_PRICES)" : "";
+  renderChart(s.by_day);
+  renderModels(s.by_model);
 }
 
-async function api(path, options = {}) {
-  const res = await fetch(path, Object.assign({}, options, { headers: headers(options.headers || {}) }));
-  if (res.status === 401) throw new Error("Admin token rejected");
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.json();
+function kpi(label, value, sub) {
+  return '<div class="card kpi"><div class="label">' + label + '</div><div class="value">' + value + '</div><div class="sub">' + sub + "</div></div>";
 }
 
-function fmtTime(ts) {
-  if (!ts) return "never";
-  return new Date(ts * 1000).toLocaleString();
+function renderModels(list) {
+  $("byModel").innerHTML = list.length ? list.map((m) =>
+    "<tr><td title='" + escapeHtml(m.model) + "'>" + escapeHtml(shortModel(m.model)) + "</td><td class='num'>" + m.requests +
+    "</td><td class='num'>" + num(m.prompt_tokens) + "</td><td class='num'>" + pct(m.cached_tokens, m.prompt_tokens) +
+    "</td><td class='num'>" + num(m.completion_tokens) + "</td><td class='num'>" + money(m.cost) +
+    "</td><td class='num'>" + (m.saved > 0 ? money(m.saved) : "—") + "</td></tr>"
+  ).join("") : '<tr><td colspan="7" class="empty">No requests in this period.</td></tr>';
+}
+
+function renderChart(days) {
+  const svg = $("chart");
+  const w = svg.clientWidth || 560, h = 190, padL = 46, padB = 24, padT = 10;
+  svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+  if (!days.length) { svg.innerHTML = '<text x="' + w / 2 + '" y="' + h / 2 + '" text-anchor="middle">No data in this period</text>'; return; }
+  const max = Math.max(...days.map((d) => d.cost), 0.0001);
+  const bw = Math.min(46, (w - padL - 8) / days.length - 6);
+  const step = (w - padL - 8) / days.length;
+  let out = "";
+  for (let i = 0; i <= 2; i++) {
+    const y = padT + (h - padB - padT) * (1 - i / 2);
+    out += '<line class="grid" x1="' + padL + '" x2="' + w + '" y1="' + y + '" y2="' + y + '"/><text x="' + (padL - 6) + '" y="' + (y + 4) + '" text-anchor="end">' + money(max * i / 2) + "</text>";
+  }
+  days.forEach((d, i) => {
+    const bh = Math.max(2, (h - padB - padT) * (d.cost / max));
+    const x = padL + i * step + (step - bw) / 2;
+    out += '<rect class="b1" rx="3" x="' + x + '" y="' + (h - padB - bh) + '" width="' + bw + '" height="' + bh + '"><title>' +
+      d.day + ": " + money(d.cost) + ", " + d.requests + " requests, " + pct(d.cached_tokens, d.prompt_tokens) + " cached</title></rect>";
+    if (days.length <= 14 || i % Math.ceil(days.length / 10) === 0) {
+      out += '<text x="' + (x + bw / 2) + '" y="' + (h - 6) + '" text-anchor="middle">' + d.day.slice(5) + "</text>";
+    }
+  });
+  svg.innerHTML = out;
+}
+
+// ---------- requests ----------
+function matches(r) {
+  if ($("fDevice").value && String(r.device_id) !== $("fDevice").value) return false;
+  if ($("fModel").value && r.model !== $("fModel").value) return false;
+  const res = $("fResult").value;
+  if (res === "ok" && r.status >= 400) return false;
+  if (res === "failed" && r.status < 400) return false;
+  return true;
+}
+
+function renderLogs() {
+  const matched = rows.filter(matches);
+  const shown = matched.slice(0, LATEST);
+  $("reqCount").textContent = "latest " + shown.length + (matched.length > LATEST ? " of " + matched.length + " loaded" : "");
+  $("logs").innerHTML = shown.length ? shown.map((r) => requestRow(r, freshIds.has(r.id), openIds.has(r.id))).join("")
+    : '<tr><td colspan="8" class="empty">No matching requests.</td></tr>';
+}
+
+async function loadLogs(initial) {
+  if (initial) { rows = []; seenMaxId = 0; }
+  const rowsNew = await api("/admin/logs?limit=" + PAGE + (seenMaxId ? "&after_id=" + seenMaxId : ""));
+  if (rowsNew.length) {
+    if (!initial) freshIds = new Set(rowsNew.map((r) => r.id));
+    rows = rowsNew.concat(rows);
+    seenMaxId = Math.max(seenMaxId, ...rowsNew.map((r) => r.id));
+    fillFilters();
+  }
+  renderLogs();
+}
+
+function fillFilters() {
+  const models = [...new Set(rows.map((r) => r.model))].sort();
+  const keepM = $("fModel").value;
+  $("fModel").innerHTML = '<option value="">All models</option>' + models.map((m) => "<option value='" + escapeHtml(m) + "'>" + escapeHtml(shortModel(m)) + "</option>").join("");
+  $("fModel").value = keepM;
+  const keepD = $("fDevice").value;
+  $("fDevice").innerHTML = '<option value="">All PCs</option>' + deviceList.map((d) => "<option value='" + d.id + "'>" + escapeHtml(d.name) + "</option>").join("");
+  $("fDevice").value = keepD;
+}
+
+// ---------- devices ----------
+async function loadDevices() {
+  const all = await api("/admin/devices");
+  deviceList = all;
+  const active = all.filter((d) => d.active);
+  const revoked = all.length - active.length;
+  $("revokedLink").textContent = revoked ? revoked + " revoked, view archive →" : "";
+  $("devices").innerHTML = active.length ? active.map((d) =>
+    "<tr><td>" + d.id + "</td><td>" + escapeHtml(d.name) + "</td><td>" + escapeHtml(d.models || "all") +
+    "</td><td title='" + escapeHtml(fmtTime(d.last_seen_at)) + "'>" + ago(d.last_seen_at) +
+    "</td><td class='num'>" + d.requests + "</td><td class='num'>" + money(d.cost) + "</td><td class='num'>" +
+    '<button class="small" data-models="' + d.id + '" title="Give this PC the models ticked under Register a PC">Apply ticked models</button> ' +
+    '<button class="small danger" data-revoke="' + d.id + '">Revoke</button></td></tr>'
+  ).join("") : '<tr><td colspan="7" class="empty">No active PCs. Register one below.</td></tr>';
 }
 
 async function loadModels() {
   allowedModels = await api("/admin/models");
   $("modelPicker").innerHTML = allowedModels.map((m) =>
-    '<label class="pill"><input type="checkbox" value="' + m + '" checked> ' + m + "</label>"
+    '<label class="pill"><input type="checkbox" value="' + escapeHtml(m) + '" checked> ' + escapeHtml(m) + "</label>"
   ).join(" ");
 }
-
-async function loadDevices() {
-  const rows = await api("/admin/devices");
-  $("devices").innerHTML = rows.length ? rows.map((d) =>
-    "<tr><td>" + d.id + "</td><td>" + escapeHtml(d.name) + "</td><td>" + escapeHtml(d.models || "all") +
-    "</td><td>" + (d.active ? '<span class="pill on">active</span>' : '<span class="pill">revoked</span>') +
-    "</td><td>" + fmtTime(d.last_seen_at) + "</td><td>" +
-    (d.active ? '<button data-models="' + d.id + '" title="Give this PC the models ticked above">Apply ticked models</button> ' +
-      '<button class="danger" data-revoke="' + d.id + '">Revoke</button>' : "") + "</td></tr>"
-  ).join("") : '<tr><td colspan="6" class="muted">No devices registered.</td></tr>';
-}
-
-async function loadLogs() {
-  const rows = await api("/admin/logs?limit=50");
-  $("logs").innerHTML = rows.length ? rows.map((r) =>
-    "<tr><td>" + fmtTime(r.ts) + "</td><td>" + escapeHtml(r.device_name) + "</td><td>" + escapeHtml(r.model) +
-    "</td><td>" + r.status + "</td><td>" + r.latency_ms + "</td><td>" +
-    (r.prompt_tokens ?? "-") + " / " + (r.completion_tokens ?? "-") +
-    "</td><td>" + escapeHtml(r.error || "") + "</td></tr>"
-  ).join("") : '<tr><td colspan="7" class="muted">No requests yet.</td></tr>';
-}
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-async function connect() {
-  if (!adminToken) { $("authState").textContent = "Not connected"; $("authState").className = "muted"; return; }
-  try {
-    await loadModels();
-    await loadDevices();
-    await loadLogs();
-    $("authState").textContent = "Connected";
-    $("authState").className = "ok";
-  } catch (err) {
-    $("authState").textContent = err.message;
-    $("authState").className = "err";
-  }
-}
-
-$("saveToken").onclick = () => {
-  adminToken = $("adminToken").value.trim();
-  localStorage.setItem("csAdminToken", adminToken);
-  connect();
-};
-
-$("createDevice").onclick = async () => {
-  const name = $("deviceName").value.trim();
-  if (!name) { $("createState").textContent = "Enter a PC name"; return; }
-  const models = pickedModels();
-  try {
-    const res = await api("/admin/devices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, models }),
-    });
-    $("tokenBox").style.display = "block";
-    $("tokenBox").innerHTML = "<strong>Token for " + escapeHtml(res.name) + "</strong> (shown once)<br><code>" +
-      escapeHtml(res.token) + "</code><br><span class='muted'>On the office PC, with LibreOffice closed, run:</span><br><code>curl -fsSL -H \"Authorization: Bearer " +
-      escapeHtml(res.token) + "\" " + location.origin + "/setup.sh | bash</code>" +
-      "<br><br><span class='muted'>No command needed: give the employee this token and the file below (same for every PC). " +
-      "They install it (double-click), restart LibreOffice, then use Tools &gt; CellScribe: Enter access token.</span><br>" +
-      "<a href='/setup/CellScribe.oxt' download>CellScribe.oxt</a>";
-    $("createState").textContent = "Created device " + res.id;
-    $("deviceName").value = "";
-    await loadDevices();
-  } catch (err) {
-    $("createState").textContent = err.message;
-    $("createState").className = "err";
-  }
-};
-
-$("reloadDevices").onclick = () => loadDevices().catch((e) => alert(e.message));
-$("reloadLogs").onclick = () => loadLogs().catch((e) => alert(e.message));
 
 // All ticked means "every gateway model" (stored empty), so the PC follows
 // later changes to CELLSCRIBE_ALLOWED_MODELS instead of a frozen list.
@@ -185,18 +230,78 @@ function pickedModels() {
   return picked.length === boxes.length ? [] : picked;
 }
 
+// ---------- wiring ----------
+async function refreshAll() {
+  if (!adminToken) { setAuth(false, "Enter the admin token"); return; }
+  try {
+    await loadDevices();
+    await Promise.all([loadStats(), loadLogs(rows.length === 0)]);
+    if (!allowedModels.length) await loadModels();
+    setAuth(true, "Connected");
+  } catch (err) {
+    setAuth(false, err.message);
+  }
+}
+window.refreshAll = refreshAll;
+
+renderHeader("dash");
+startLive(async () => { try { await loadDevices(); await Promise.all([loadStats(), loadLogs(false)]); setAuth(true, "Connected"); } catch (e) { setAuth(false, e.message); } }, 5000);
+
+$("rangeTabs").onclick = (e) => {
+  const r = e.target.getAttribute("data-range");
+  if (!r) return;
+  range = r;
+  [...$("rangeTabs").children].forEach((b) => b.classList.toggle("on", b === e.target));
+  loadStats().catch((err) => setAuth(false, err.message));
+};
+["fDevice", "fModel", "fResult"].forEach((id) => { $(id).onchange = renderLogs; });
+$("logs").onclick = (e) => {
+  const tr = e.target.closest("tr.req");
+  if (!tr) return;
+  const id = Number(tr.getAttribute("data-id"));
+  if (openIds.has(id)) openIds.delete(id); else openIds.add(id);
+  freshIds = new Set();
+  renderLogs();
+};
+
+$("createDevice").onclick = async () => {
+  const name = $("deviceName").value.trim();
+  if (!name) { $("createState").textContent = "Enter a PC name"; return; }
+  try {
+    const res = await api("/admin/devices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, models: pickedModels() }),
+    });
+    $("tokenBox").style.display = "block";
+    $("tokenBox").innerHTML = "<strong>Token for " + escapeHtml(res.name) + "</strong> (shown once)<br><code>" +
+      escapeHtml(res.token) + "</code><br><span class='muted'>On the office PC, with LibreOffice closed, run:</span><br><code>curl -fsSL -H \"Authorization: Bearer " +
+      escapeHtml(res.token) + "\" " + location.origin + "/setup.sh | bash</code>" +
+      "<br><br><span class='muted'>No command needed: give the employee this token and the file below (same for every PC). " +
+      "They install it (double-click), restart LibreOffice, then use Tools &gt; CellScribe: Enter access token.</span><br>" +
+      "<a href='/setup/CellScribe.oxt' download>CellScribe.oxt</a>";
+    $("createState").className = "muted";
+    $("createState").textContent = "Created device " + res.id;
+    $("deviceName").value = "";
+    await loadDevices();
+  } catch (err) {
+    $("createState").className = "err";
+    $("createState").textContent = err.message;
+  }
+};
+
 document.addEventListener("click", async (event) => {
   const modelsId = event.target.getAttribute("data-models");
   if (modelsId) {
-    const models = pickedModels();
     try {
       await api("/admin/devices/" + modelsId + "/models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ models }),
+        body: JSON.stringify({ models: pickedModels() }),
       });
+      toast("Models updated for device " + modelsId);
       await loadDevices();
-    } catch (err) { alert(err.message); }
+    } catch (err) { toast(err.message); }
     return;
   }
   const id = event.target.getAttribute("data-revoke");
@@ -204,11 +309,12 @@ document.addEventListener("click", async (event) => {
   if (!confirm("Revoke device " + id + "? Its token stops working immediately.")) return;
   try {
     await api("/admin/devices/" + id + "/revoke", { method: "POST" });
+    toast("Device " + id + " revoked. See it under Revoked devices.");
     await loadDevices();
-  } catch (err) { alert(err.message); }
+  } catch (err) { toast(err.message); }
 });
 
-if (adminToken) { $("adminToken").value = adminToken; connect(); }
+refreshAll();
 </script>
 </body>
 </html>

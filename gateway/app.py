@@ -74,6 +74,114 @@ OXT_PATH = os.environ.get("CELLSCRIBE_OXT", "/app/vendor/WriterAgent.oxt")
 app = FastAPI(title="CellScribe Gateway", version="0.1.0")
 client: httpx.AsyncClient | None = None
 
+# --- Pricing -----------------------------------------------------------------
+# USD per token: {"prompt", "completion", "cache_read", "cache_write"}.
+# OpenRouter publishes prices for every model it serves; they are fetched at
+# startup and refreshed daily. CELLSCRIBE_PRICES overrides or adds models
+# (needed for Mistral direct), as USD per million tokens:
+#   {"mistral-large-latest": {"in": 2, "out": 6, "cache_read": 0.2}}
+PRICES: dict[str, dict[str, float]] = {}
+
+
+def _load_price_overrides() -> dict[str, dict[str, float]]:
+    raw = os.environ.get("CELLSCRIBE_PRICES", "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        print("cellscribe: CELLSCRIBE_PRICES is not valid JSON; ignoring it", flush=True)
+        return {}
+    table: dict[str, dict[str, float]] = {}
+    for name, entry in (data.items() if isinstance(data, dict) else []):
+        if not isinstance(entry, dict):
+            continue
+        table[str(name)] = {
+            "prompt": float(entry.get("in", 0)) / 1e6,
+            "completion": float(entry.get("out", 0)) / 1e6,
+            "cache_read": float(entry["cache_read"]) / 1e6 if "cache_read" in entry else 0.0,
+            "cache_write": float(entry["cache_write"]) / 1e6 if "cache_write" in entry else 0.0,
+        }
+    return table
+
+
+def _per_token(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def refresh_prices() -> None:
+    """Best-effort fetch of OpenRouter's public price list (no key needed)."""
+    if "openrouter" not in PROVIDERS or client is None:
+        return
+    try:
+        res = await client.get(f"{PROVIDERS['openrouter']['url']}/models", timeout=20)
+        res.raise_for_status()
+        for item in res.json().get("data", []):
+            pricing = item.get("pricing") or {}
+            PRICES[str(item.get("id"))] = {
+                "prompt": _per_token(pricing.get("prompt")),
+                "completion": _per_token(pricing.get("completion")),
+                "cache_read": _per_token(pricing.get("input_cache_read")),
+                "cache_write": _per_token(pricing.get("input_cache_write")),
+            }
+    except Exception as exc:  # pricing is optional; never block the gateway on it
+        print(f"cellscribe: could not fetch OpenRouter prices ({exc})", flush=True)
+    PRICES.update(_load_price_overrides())
+
+
+async def _price_refresher() -> None:
+    while True:
+        await refresh_prices()
+        await asyncio.sleep(24 * 3600)
+
+
+def usage_fields(model: str, usage: dict[str, Any] | None) -> dict[str, Any]:
+    """Token, cache and cost fields for one request, from the provider's usage block.
+
+    Cost is the provider's own figure when it reports one (OpenRouter does, with
+    cache discounts applied); otherwise it is computed from the price table, and
+    stays None when the model has no known price. ``saved`` is what the cache hits
+    cost less than the same tokens at the full input price, so it needs prices too.
+    """
+    if not isinstance(usage, dict) or not usage:
+        return {}
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    details = usage.get("prompt_tokens_details") or {}
+    out_details = usage.get("completion_tokens_details") or {}
+    cached = details.get("cached_tokens")
+    if cached is None:  # DeepSeek's own API names it differently
+        cached = usage.get("prompt_cache_hit_tokens")
+    cache_write = details.get("cache_write_tokens")
+    price = PRICES.get(model)
+
+    cost = usage.get("cost")
+    if cost is None and price and prompt is not None:
+        hit = cached or 0
+        wrote = cache_write or 0
+        fresh = max(0, prompt - hit - wrote)
+        cost = (
+            fresh * price["prompt"]
+            + hit * (price["cache_read"] or price["prompt"])
+            + wrote * (price["cache_write"] or price["prompt"])
+            + (completion or 0) * price["completion"]
+        )
+    saved = None
+    if price and cached and price["cache_read"]:
+        saved = cached * max(0.0, price["prompt"] - price["cache_read"])
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "cached_tokens": cached,
+        "cache_write_tokens": cache_write,
+        "reasoning_tokens": out_details.get("reasoning_tokens"),
+        "cost": float(cost) if cost is not None else None,
+        "saved": saved,
+    }
+
 
 @app.on_event("startup")
 async def startup() -> None:
@@ -91,6 +199,8 @@ async def startup() -> None:
         raise RuntimeError("CELLSCRIBE_ADMIN_TOKEN is required")
     store.configure(DB_PATH)
     client = httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=10.0))
+    PRICES.update(_load_price_overrides())
+    asyncio.create_task(_price_refresher())
 
 
 @app.on_event("shutdown")
@@ -196,10 +306,34 @@ async def healthz() -> dict[str, Any]:
 @app.get("/")
 async def dashboard() -> Any:
     """Serve the small admin dashboard (data calls still need the admin token)."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin.html")
+    return _page("admin.html")
+
+
+@app.get("/requests")
+async def requests_page() -> Any:
+    """Full request log with filters and paging."""
+    return _page("requests.html")
+
+
+@app.get("/revoked")
+async def revoked_page() -> Any:
+    """Archive of revoked devices, kept off the main dashboard."""
+    return _page("revoked.html")
+
+
+@app.get("/assets/{name}")
+async def dashboard_asset(name: str) -> Any:
+    """Shared dashboard stylesheet and script (public files, no data)."""
+    if name not in ("admin.css", "admin.js"):
+        raise HTTPException(status_code=404, detail="Not found")
+    return _page(name)
+
+
+def _page(name: str) -> Any:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Dashboard not installed")
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
 SETUP_TEMPLATE = r'''#!/usr/bin/env bash
@@ -391,6 +525,8 @@ async def chat_completions(
         # particular); otherwise OpenRouter may pick a host that ignores them.
         prefs = payload.get("provider") if isinstance(payload.get("provider"), dict) else {}
         payload["provider"] = {"require_parameters": True, **prefs}
+        # Ask for the real cost (cache discounts included) in the usage block.
+        payload.setdefault("usage", {"include": True})
         if stream:
             payload.setdefault("stream_options", {"include_usage": True})
 
@@ -444,8 +580,7 @@ async def chat_completions(
                                 continue
                             found = obj.get("usage") if isinstance(obj, dict) else None
                             if isinstance(found, dict):
-                                usage["prompt_tokens"] = found.get("prompt_tokens")
-                                usage["completion_tokens"] = found.get("completion_tokens")
+                                usage = found
                         yield chunk
                 finally:
                     await upstream.aclose()
@@ -456,8 +591,7 @@ async def chat_completions(
                         status=upstream.status_code,
                         latency_ms=int((time.monotonic() - started) * 1000),
                         stream=True,
-                        prompt_tokens=usage.get("prompt_tokens"),
-                        completion_tokens=usage.get("completion_tokens"),
+                        **usage_fields(model, usage),
                     )
 
             return StreamingResponse(
@@ -496,9 +630,7 @@ async def chat_completions(
             status=response.status_code,
             latency_ms=latency,
             stream=False,
-            prompt_tokens=usage.get("prompt_tokens"),
-            completion_tokens=usage.get("completion_tokens"),
-            error=None if response.status_code < 400 else f"upstream_{response.status_code}",
+            **usage_fields(model, usage),
         )
         return JSONResponse(
             content=response.json() if response.headers.get("content-type", "").startswith("application/json") else {"error": {"message": "Upstream returned a non-JSON response"}},
@@ -518,8 +650,12 @@ async def chat_completions(
 
 
 @app.get("/admin/devices")
-async def admin_devices(_: None = Depends(_require_admin)) -> list[dict[str, Any]]:
-    return store.list_devices()
+async def admin_devices(
+    status: str = "all", _: None = Depends(_require_admin)
+) -> list[dict[str, Any]]:
+    """Devices with their request count and spend. status: active | revoked | all."""
+    active = {"active": True, "revoked": False}.get(status)
+    return store.list_devices(active=active)
 
 
 @app.post("/admin/devices")
@@ -552,9 +688,50 @@ async def admin_revoke(device_id: int, _: None = Depends(_require_admin)) -> dic
 
 @app.get("/admin/logs")
 async def admin_logs(
-    limit: int = 100, device_id: int | None = None, _: None = Depends(_require_admin)
+    limit: int = 100,
+    device_id: int | None = None,
+    after_id: int | None = None,
+    before_id: int | None = None,
+    model: str | None = None,
+    result: str = "all",
+    _: None = Depends(_require_admin),
 ) -> list[dict[str, Any]]:
-    return store.recent_requests(limit=limit, device_id=device_id)
+    """Request metadata, newest first. result: all | ok | failed."""
+    failed = {"failed": True, "ok": False}.get(result)
+    return store.recent_requests(
+        limit=limit,
+        device_id=device_id,
+        after_id=after_id,
+        before_id=before_id,
+        model=model or None,
+        failed=failed,
+    )
+
+
+RANGES = {"today": None, "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "all": 0}
+
+
+@app.get("/admin/stats")
+async def admin_stats(
+    range: str = "7d", tz: int = 0, _: None = Depends(_require_admin)
+) -> dict[str, Any]:
+    """Usage, cache and cost totals. range: today | 24h | 7d | 30d | all.
+
+    ``tz`` is the viewer's offset from UTC in minutes, so "today" and the daily
+    buckets follow their clock.
+    """
+    if range not in RANGES:
+        raise HTTPException(status_code=400, detail="range must be one of " + ", ".join(RANGES))
+    now = time.time()
+    if range == "today":
+        local = now + tz * 60
+        since = local - (local % 86400) - tz * 60
+    else:
+        since = now - RANGES[range] if RANGES[range] else 0
+    data = store.stats(since, tz_offset_min=tz)
+    data["range"] = range
+    data["priced_models"] = sum(1 for m in ALLOWED_MODELS if m in PRICES)
+    return data
 
 
 @app.get("/admin/models")

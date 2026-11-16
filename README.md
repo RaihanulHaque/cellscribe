@@ -322,6 +322,7 @@ All settings are environment variables in `gateway/.env`.
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter base URL. |
 | `MISTRAL_BASE_URL` | no | `https://api.mistral.ai/v1` | Base URL for bare model ids; point it at another OpenAI-compatible server if needed. |
 | `CELLSCRIBE_RETRIES` | no | `2` | Retries for transient upstream failures (dropped connection, 429/502/503/504) before an error reaches the PC. |
+| `CELLSCRIBE_PRICES` | no | OpenRouter's price list | JSON of USD per million tokens for models without a public price (Mistral direct), e.g. `{"mistral-large-latest":{"in":2,"out":6,"cache_read":0.2}}`. Used for cost when the provider reports none. |
 | `CELLSCRIBE_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
 | `CELLSCRIBE_PUBLIC_URL` | no | from request | Gateway URL embedded in `setup.sh` and `CellScribe.oxt`. |
 | `CELLSCRIBE_DB` | no | `/data/cellscribe.db` | SQLite path inside the container. |
@@ -434,16 +435,17 @@ Device endpoints require `Authorization: Bearer <device-token>`; admin endpoints
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | none | Liveness probe. |
-| `GET` | `/` | none | Admin dashboard HTML (its data calls need the admin token). |
+| `GET` | `/`, `/requests`, `/revoked` | none | Dashboard, full request log and revoked-devices pages (their data calls need the admin token). |
 | `GET` | `/setup/CellScribe.oxt` | none | The patched extension with the gateway URL embedded; contains no secret. |
 | `GET` | `/setup.sh` | device | Generated installer and config script for that device. |
 | `GET` | `/v1/models` | device | Models this device may use, OpenAI-shaped. |
 | `POST` | `/v1/chat/completions` | device | Proxied to OpenRouter or Mistral by model id; supports `stream: true`. |
-| `GET` | `/admin/devices` | admin | List devices (no token hashes). |
+| `GET` | `/admin/devices?status=active\|revoked\|all` | admin | List devices (no token hashes) with request count and spend. |
 | `POST` | `/admin/devices` | admin | Create a device; returns its token once. |
 | `POST` | `/admin/devices/{id}/models` | admin | Replace a device's model allow-list; `[]` means all models. |
 | `POST` | `/admin/devices/{id}/revoke` | admin | Revoke immediately. |
-| `GET` | `/admin/logs?limit=100` | admin | Recent request metadata. |
+| `GET` | `/admin/logs?limit=100` | admin | Request metadata, newest first. Filters: `device_id`, `model`, `result=ok\|failed`, `after_id`, `before_id`. |
+| `GET` | `/admin/stats?range=7d&tz=0` | admin | Spend, tokens, cache hit rate and latency totals, per model, PC and day. `range`: `today`, `24h`, `7d`, `30d`, `all`; `tz` is minutes from UTC. |
 | `GET` | `/admin/models` | admin | Models the gateway can serve. |
 
 Create a device without the dashboard:
@@ -470,10 +472,27 @@ Errors use OpenAI's shape so LibreOffice shows a readable message, for example:
 
 `http://<gateway-ip>:8080/` provides:
 
-- **Register a PC**: name plus model checkboxes; the token and setup instructions are shown once.
-- **Devices**: status, allowed models, last-seen time, **Apply ticked models** and **Revoke**.
-- **Recent requests**: time, device, model, HTTP status, latency, token counts and the provider's
-  error message, if any.
+The page refreshes itself every few seconds (the **Live** switch in the header pauses it).
+
+- **Summary cards** for Today, 24 h, 7 days, 30 days or all time: spend, requests and failure rate,
+  tokens in and out, cache hit rate with the amount the cache saved, and median and p95 latency.
+- **Spend per day** chart and **Cost by model** table (requests, tokens, cached share, cost, saved).
+- **Recent requests**: the newest 10, appearing live and flashing as they arrive. Click a row for
+  its token breakdown (prompt, cached, cache written, output, reasoning, cost, error).
+- **All requests** (`/requests`): the full log, 25, 50 or 100 rows per page with Newer and Older
+  buttons. Filter by PC, model or result (successful or failed). Only the newest page refreshes
+  itself, so the page you are reading does not move.
+- **PCs**: last seen, request count and spend per PC, **Apply ticked models** and **Revoke**.
+  Registering a PC is in a collapsible panel at the bottom.
+- **Revoked devices** (`/revoked`): revoked PCs move off the main page into this archive, with
+  their creation and revoke dates and total usage, and a search box.
+
+**Where cost comes from.** For OpenRouter models the gateway records the cost OpenRouter itself
+reports, so cache discounts are already included. Other models are priced from `CELLSCRIBE_PRICES`;
+without a price their cost shows as "—" and they are not added to spend. Requests logged before
+cost tracking also show "—": the dashboard never estimates a figure it was not given. The "saved"
+amount is the cached tokens' discount against the full input price, from OpenRouter's public price
+list. Prices that vary by time of day (some models are cheaper off-peak) mean this is an estimate.
 
 The admin token is kept in the browser's `localStorage`, so use a trusted machine.
 
@@ -569,7 +588,10 @@ WriterAgent fixes (sort, Writer snapshot) upstream.
 │   ├── patches.py           Exact patches applied to WriterAgent when building CellScribe.oxt
 │   ├── packager.py          Builds CellScribe.oxt (token-entry menu item + patches)
 │   ├── store.py             SQLite device registry and request log
-│   ├── admin.html           Single-page admin dashboard
+│   ├── admin.html           Admin dashboard (live stats, costs, requests)
+│   ├── requests.html        Full request log with filters and paging
+│   ├── revoked.html         Revoked-devices archive page
+│   ├── admin.css, admin.js  Styles and helpers shared by both pages
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   ├── requirements.txt

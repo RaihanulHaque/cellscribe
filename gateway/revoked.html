@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revoked devices - CellScribe Gateway</title>
+<link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+<header class="top" id="top"></header>
+<main>
+  <section>
+    <h2>Revoked devices</h2>
+    <p class="muted" style="margin-top:0">Tokens that no longer work. Kept here so past usage and spend stay on record.</p>
+    <div class="row" style="margin-bottom:10px">
+      <input id="search" type="text" placeholder="Search by name" style="min-width:220px">
+      <span id="count" class="muted" style="font-size:12px"></span>
+    </div>
+    <div class="card tablewrap">
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Created</th><th>Revoked</th><th>Last seen</th><th class="num">Requests</th><th class="num">Tokens in / out</th><th class="num">Total spend</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="8" class="empty">Connect with the admin token.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/assets/admin.js"></script>
+<script>
+let devices = [];
+
+function render() {
+  const q = $("search").value.trim().toLowerCase();
+  const shown = devices.filter((d) => !q || d.name.toLowerCase().includes(q));
+  $("count").textContent = devices.length + " revoked" + (q ? ", " + shown.length + " match" : "");
+  $("rows").innerHTML = shown.length ? shown.map((d) =>
+    "<tr><td>" + d.id + "</td><td>" + escapeHtml(d.name) + "</td><td>" + fmtTime(d.created_at) +
+    "</td><td>" + (d.revoked_at ? fmtTime(d.revoked_at) : "<span class='muted'>before tracking</span>") +
+    "</td><td>" + (d.last_seen_at ? ago(d.last_seen_at) : "never") + "</td><td class='num'>" + d.requests +
+    "</td><td class='num'>" + num(d.prompt_tokens) + " / " + num(d.completion_tokens) +
+    "</td><td class='num'>" + money(d.cost) + "</td></tr>"
+  ).join("") : '<tr><td colspan="8" class="empty">' + (devices.length ? "No match." : "No revoked devices.") + "</td></tr>";
+}
+
+async function refreshAll() {
+  if (!adminToken) { setAuth(false, "Enter the admin token"); return; }
+  try {
+    devices = await api("/admin/devices?status=revoked");
+    devices.sort((a, b) => (b.revoked_at || 0) - (a.revoked_at || 0) || b.id - a.id);
+    render();
+    setAuth(true, "Connected");
+  } catch (err) {
+    setAuth(false, err.message);
+  }
+}
+window.refreshAll = refreshAll;
+
+renderHeader("revoked");
+startLive(refreshAll, 15000);
+$("search").oninput = render;
+refreshAll();
+</script>
+</body>
+</html>
