@@ -91,7 +91,7 @@ function requestDetail(r) {
 
 function renderHeader(active) {
   $("top").innerHTML =
-    "<h1>CellScribe Gateway</h1>" +
+    "<h1><img src='/assets/logo.svg' alt='' class='logo'>Libre Thinker <span class='sub'>Gateway</span></h1>" +
     '<nav><a href="/" class="' + (active === "dash" ? "on" : "") + '">Dashboard</a>' +
     '<a href="/requests" class="' + (active === "requests" ? "on" : "") + '">All requests</a>' +
     '<a href="/revoked" class="' + (active === "revoked" ? "on" : "") + '">Revoked devices</a></nav>' +

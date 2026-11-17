@@ -17,7 +17,9 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 header.top { background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 24px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
-header.top h1 { font-size: 17px; margin: 0; }
+header.top h1 { font-size: 17px; margin: 0; display: flex; align-items: center; gap: 8px; }
+header.top h1 .logo { width: 26px; height: 26px; }
+header.top h1 .sub { font-weight: 400; color: var(--muted); }
 nav { display: flex; gap: 4px; }
 nav a { padding: 5px 12px; border-radius: 6px; color: var(--muted); }
 nav a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }

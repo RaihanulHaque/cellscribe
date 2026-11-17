@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CellScribe Gateway</title>
+<title>Libre Thinker Gateway</title>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body>
@@ -278,8 +279,8 @@ $("createDevice").onclick = async () => {
       escapeHtml(res.token) + "</code><br><span class='muted'>On the office PC, with LibreOffice closed, run:</span><br><code>curl -fsSL -H \"Authorization: Bearer " +
       escapeHtml(res.token) + "\" " + location.origin + "/setup.sh | bash</code>" +
       "<br><br><span class='muted'>No command needed: give the employee this token and the file below (same for every PC). " +
-      "They install it (double-click), restart LibreOffice, then use Tools &gt; CellScribe: Enter access token.</span><br>" +
-      "<a href='/setup/CellScribe.oxt' download>CellScribe.oxt</a>";
+      "They install it (double-click), restart LibreOffice, then use Tools &gt; Libre Thinker: Enter access token.</span><br>" +
+      "<a href='/setup/LibreThinker.oxt' download>LibreThinker.oxt</a>";
     $("createState").className = "muted";
     $("createState").textContent = "Created device " + res.id;
     $("deviceName").value = "";

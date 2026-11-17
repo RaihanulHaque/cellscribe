@@ -13,6 +13,7 @@ venv/
 
 # Built extension downloaded from the gateway for local install
 /CellScribe.oxt
+/LibreThinker.oxt
 
 # LibreOffice document lock files
 .~lock.*#

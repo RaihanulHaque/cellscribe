@@ -3,7 +3,7 @@
 """Build the CellScribe extension: WriterAgent plus a token-entry menu item.
 
 The package is identical for every PC: it embeds only the gateway URL. Each
-employee pastes their device token once (Tools > CellScribe: Enter access
+employee pastes their device token once (Tools > Libre Thinker: Enter access
 token); the extension validates it against the gateway and writes WriterAgent's
 writeragent.json. The Mistral key is never involved.
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import functools
 import io
+import pathlib
 import json
 import re
 import zipfile
@@ -60,7 +61,7 @@ _ADDONS = """<?xml version="1.0" encoding="UTF-8"?>
         <node oor:name="MenuItems">
           <node oor:name="M1" oor:op="replace">
             <prop oor:name="URL"><value>%(proto)sSetToken</value></prop>
-            <prop oor:name="Title"><value xml:lang="en-US">CellScribe: Enter access token...</value></prop>
+            <prop oor:name="Title"><value xml:lang="en-US">Libre Thinker: Enter access token...</value></prop>
             <prop oor:name="Target"><value>_self</value></prop>
           </node>
         </node>
@@ -153,7 +154,7 @@ def _message(ctx, text, error=False):
     frame = desktop.getCurrentFrame()
     parent = frame.getContainerWindow() if frame else toolkit.getDesktopWindow()
     kind = uno.Enum("com.sun.star.awt.MessageBoxType", "ERRORBOX" if error else "INFOBOX")
-    box = toolkit.createMessageBox(parent, kind, 1, "CellScribe", text)
+    box = toolkit.createMessageBox(parent, kind, 1, "Libre Thinker", text)
     box.execute()
 
 
@@ -162,7 +163,7 @@ def _ask_token(ctx):
     smgr = ctx.ServiceManager
     model = smgr.createInstanceWithContext("com.sun.star.awt.UnoControlDialogModel", ctx)
     model.PositionX, model.PositionY, model.Width, model.Height = 0, 0, 230, 78
-    model.Title = "CellScribe access token"
+    model.Title = "Libre Thinker access token"
 
     def add(kind, name, **props):
         item = model.createInstance("com.sun.star.awt.UnoControl%%sModel" %% kind)
@@ -222,7 +223,7 @@ class Dispatch(unohelper.Base, XDispatch):
             run(self.ctx, token)
         except Exception as exc:
             try:
-                _message(self.ctx, "CellScribe setup failed: %%s" %% exc, error=True)
+                _message(self.ctx, "Libre Thinker setup failed: %%s" %% exc, error=True)
             except Exception:
                 pass
 
@@ -263,6 +264,15 @@ g_ImplementationHelper.addImplementation(Handler, SERVICE, ("com.sun.star.frame.
 '''
 
 
+# Libre Thinker artwork that replaces WriterAgent's own images in the package.
+_BRAND_DIR = pathlib.Path(__file__).resolve().parent / "brand"
+_BRAND_ASSETS = {
+    "assets/logo.jpg": "logo_256.jpg",
+    "assets/logo_32.png": "logo_32.png",
+    "assets/icon_64.png": "logo_64.png",
+}
+
+
 @functools.lru_cache(maxsize=8)
 def build_oxt(base_oxt: str, endpoint: str, default_model: str) -> bytes:
     """Return the bytes of WriterAgent with the CellScribe additions."""
@@ -277,8 +287,11 @@ def build_oxt(base_oxt: str, endpoint: str, default_model: str) -> bytes:
                 if "</manifest:manifest>" not in text:
                     raise ValueError("Unexpected manifest.xml in base extension")
                 data = text.replace("</manifest:manifest>", _MANIFEST_ENTRIES + "</manifest:manifest>").encode("utf-8")
+            elif item.filename in _BRAND_ASSETS:
+                data = (_BRAND_DIR / _BRAND_ASSETS[item.filename]).read_bytes()
             elif item.filename == "description.xml":
                 text = data.decode("utf-8")
+                text = text.replace("<name>WriterAgent</name>", "<name>Libre Thinker</name>")
                 text = re.sub(r"\s*<update-information>.*?</update-information>", "", text, flags=re.S)
                 data = text.encode("utf-8")
             else:

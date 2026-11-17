@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Libre Thinker">
+  <rect width="256" height="256" rx="58" fill="#2456d6"/>
+  <!-- page with a folded corner -->
+  <path d="M62 44h78l50 50v108a14 14 0 0 1-14 14H62a14 14 0 0 1-14-14V58a14 14 0 0 1 14-14z" fill="#ffffff"/>
+  <path d="M140 44v36a14 14 0 0 0 14 14h36z" fill="#cfe0ff"/>
+  <!-- text lines (Writer) -->
+  <rect x="68" y="108" width="74" height="9" rx="4.5" fill="#2b59d9"/>
+  <rect x="68" y="127" width="104" height="9" rx="4.5" fill="#9db6ee"/>
+  <!-- cells (Calc) -->
+  <g fill="#0f9d8f">
+    <rect x="68" y="152" width="30" height="22" rx="4"/>
+    <rect x="103" y="152" width="30" height="22" rx="4" opacity=".55"/>
+    <rect x="138" y="152" width="30" height="22" rx="4" opacity=".3"/>
+    <rect x="68" y="179" width="30" height="22" rx="4" opacity=".55"/>
+    <rect x="103" y="179" width="30" height="22" rx="4" opacity=".3"/>
+  </g>
+  <!-- spark of thought -->
+  <circle cx="190" cy="190" r="40" fill="#ffb81c" stroke="#ffffff" stroke-width="8"/>
+  <path d="M190 164c1.6 14 8 20.4 22 22-14 1.6-20.4 8-22 22-1.6-14-8-20.4-22-22 14-1.6 20.4-8 22-22z" fill="#ffffff"/>
+</svg>
