@@ -1,6 +1,6 @@
-# Benchmark: open-weight models for Libre Thinker
+# Benchmark: open-weight models for Libre Agent
 
-Can a model small enough to host in-house do the work Libre Thinker asks of it? This page records
+Can a model small enough to host in-house do the work Libre Agent asks of it? This page records
 one benchmark run on 17 November 2026 against the same office tasks used to validate the gateway.
 
 ## Summary

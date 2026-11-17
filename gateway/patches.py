@@ -643,11 +643,11 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             '        return _("AI: I can help you with formulas, data analysis, and colorful charts. Try me!")\n',
-            '        return _("Hi, I\'m Libre Thinker. Ask me to summarise this sheet, answer questions about it, add formulas, sort, format or make a chart.")\n',
+            '        return _("Hi, I\'m Libre Agent. Ask me to summarise this sheet, answer questions about it, add formulas, sort, format or make a chart.")\n',
         ),
         (
             '    return _("AI: I can edit or translate your document instantly with professional formatting and color. Try me!")\n',
-            '    return _("Hi, I\'m Libre Thinker. Ask me to summarise, rewrite, proofread, translate or format this document.")\n',
+            '    return _("Hi, I\'m Libre Agent. Ask me to summarise, rewrite, proofread, translate or format this document.")\n',
         ),
         (
             'MEMORY_GUIDANCE = """MEMORY:\n'
@@ -791,7 +791,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "registry/org/openoffice/Office/UI/Sidebar.xcu": [
         (
             '<value xml:lang="en-US">WriterAgent</value>',
-            '<value xml:lang="en-US">Libre Thinker</value>',
+            '<value xml:lang="en-US">Libre Agent</value>',
         ),
         (  # the separate "Python" sidebar deck is a developer tool: never shown
             'python_32.png</value>\n'
@@ -805,7 +805,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             '<value xml:lang="en-US">Chat with Document</value>',
-            '<value xml:lang="en-US">Ask Libre Thinker</value>',
+            '<value xml:lang="en-US">Ask Libre Agent</value>',
         ),
     ],
     # --- Bound the agent loop -------------------------------------------------
