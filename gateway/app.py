@@ -1,4 +1,4 @@
-# CellScribe gateway - OpenAI-compatible proxy in front of Mistral
+# Libre Thinker gateway - OpenAI-compatible proxy in front of Mistral
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Central AI gateway for LibreOffice WriterAgent clients.
 
@@ -44,7 +44,7 @@ def _provider_table() -> dict[str, dict[str, Any]]:
             "url": os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
             "key": openrouter_key,
             # Attribution headers OpenRouter shows in its dashboard.
-            "headers": {"HTTP-Referer": "https://github.com/cellscribe", "X-Title": "Libre Agent"},
+            "headers": {"HTTP-Referer": "https://github.com/Sysnova-Information-Systems-Ltd/libre-agent", "X-Title": "Libre Thinker"},
         }
     return providers
 
@@ -54,10 +54,18 @@ def provider_for(model: str) -> str:
 
 
 PROVIDERS = _provider_table()
-DEFAULT_MODEL = os.environ.get("CELLSCRIBE_DEFAULT_MODEL", "deepseek/deepseek-v4.1-flash-1017")
+def _env(name: str, default: str = "") -> str:
+    """LIBRETHINKER_<name>, falling back to the pre-rename CELLSCRIBE_<name> so older .env files keep working."""
+    value = os.environ.get("LIBRETHINKER_" + name)
+    if value is None:
+        value = os.environ.get("CELLSCRIBE_" + name)
+    return default if value is None else value
+
+
+DEFAULT_MODEL = _env("DEFAULT_MODEL", "deepseek/deepseek-v4.1-flash-1017")
 _configured_models = [
     m.strip()
-    for m in os.environ.get("CELLSCRIBE_ALLOWED_MODELS", DEFAULT_MODEL).split(",")
+    for m in _env("ALLOWED_MODELS", DEFAULT_MODEL).split(",")
     if m.strip()
 ] or [DEFAULT_MODEL]
 if DEFAULT_MODEL not in _configured_models:
@@ -65,32 +73,32 @@ if DEFAULT_MODEL not in _configured_models:
 # Offer only models whose provider has a key; anything else would fail upstream.
 ALLOWED_MODELS = [m for m in _configured_models if provider_for(m) in PROVIDERS]
 DROPPED_MODELS = [m for m in _configured_models if m not in ALLOWED_MODELS]
-ADMIN_TOKEN = os.environ.get("CELLSCRIBE_ADMIN_TOKEN", "")
-DB_PATH = os.environ.get("CELLSCRIBE_DB", "/data/cellscribe.db")
-REQUEST_TIMEOUT = float(os.environ.get("CELLSCRIBE_TIMEOUT", "300"))
-PUBLIC_URL = os.environ.get("CELLSCRIBE_PUBLIC_URL", "").rstrip("/")
-OXT_PATH = os.environ.get("CELLSCRIBE_OXT", "/app/vendor/WriterAgent.oxt")
+ADMIN_TOKEN = _env("ADMIN_TOKEN", "")
+DB_PATH = _env("DB", "/data/librethinker.db")
+REQUEST_TIMEOUT = float(_env("TIMEOUT", "300"))
+PUBLIC_URL = _env("PUBLIC_URL", "").rstrip("/")
+OXT_PATH = _env("OXT", "/app/vendor/WriterAgent.oxt")
 
-app = FastAPI(title="Libre Agent Gateway", version="0.1.0")
+app = FastAPI(title="Libre Thinker Gateway", version="0.1.0")
 client: httpx.AsyncClient | None = None
 
 # --- Pricing -----------------------------------------------------------------
 # USD per token: {"prompt", "completion", "cache_read", "cache_write"}.
 # OpenRouter publishes prices for every model it serves; they are fetched at
-# startup and refreshed daily. CELLSCRIBE_PRICES overrides or adds models
+# startup and refreshed daily. LIBRETHINKER_PRICES overrides or adds models
 # (needed for Mistral direct), as USD per million tokens:
 #   {"mistral-large-latest": {"in": 2, "out": 6, "cache_read": 0.2}}
 PRICES: dict[str, dict[str, float]] = {}
 
 
 def _load_price_overrides() -> dict[str, dict[str, float]]:
-    raw = os.environ.get("CELLSCRIBE_PRICES", "").strip()
+    raw = _env("PRICES", "").strip()
     if not raw:
         return {}
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        print("cellscribe: CELLSCRIBE_PRICES is not valid JSON; ignoring it", flush=True)
+        print("librethinker: LIBRETHINKER_PRICES is not valid JSON; ignoring it", flush=True)
         return {}
     table: dict[str, dict[str, float]] = {}
     for name, entry in (data.items() if isinstance(data, dict) else []):
@@ -128,7 +136,7 @@ async def refresh_prices() -> None:
                 "cache_write": _per_token(pricing.get("input_cache_write")),
             }
     except Exception as exc:  # pricing is optional; never block the gateway on it
-        print(f"cellscribe: could not fetch OpenRouter prices ({exc})", flush=True)
+        print(f"librethinker: could not fetch OpenRouter prices ({exc})", flush=True)
     PRICES.update(_load_price_overrides())
 
 
@@ -190,13 +198,13 @@ async def startup() -> None:
         raise RuntimeError("Set OPENROUTER_API_KEY and/or MISTRAL_API_KEY")
     if not ALLOWED_MODELS:
         raise RuntimeError(
-            "None of CELLSCRIBE_ALLOWED_MODELS can be served with the configured keys "
+            "None of LIBRETHINKER_ALLOWED_MODELS can be served with the configured keys "
             "(ids with a '/' need OPENROUTER_API_KEY; bare ids need MISTRAL_API_KEY)"
         )
     if DROPPED_MODELS:
-        print(f"cellscribe: no provider key for {', '.join(DROPPED_MODELS)}; not offering them", flush=True)
+        print(f"librethinker: no provider key for {', '.join(DROPPED_MODELS)}; not offering them", flush=True)
     if not ADMIN_TOKEN:
-        raise RuntimeError("CELLSCRIBE_ADMIN_TOKEN is required")
+        raise RuntimeError("LIBRETHINKER_ADMIN_TOKEN is required")
     store.configure(DB_PATH)
     client = httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=10.0))
     PRICES.update(_load_price_overrides())
@@ -243,7 +251,7 @@ def _models_for_device(device: dict[str, Any]) -> list[str]:
 # Transient upstream failures worth one more try: OpenRouter occasionally drops
 # a connection mid-response, and hosts briefly return 502/503/504 or 429.
 RETRY_STATUSES = {429, 502, 503, 504}
-RETRY_ATTEMPTS = int(os.environ.get("CELLSCRIBE_RETRIES", "2"))
+RETRY_ATTEMPTS = int(_env("RETRIES", "2"))
 
 
 async def _send_with_retry(build: Any, *, stream: bool) -> httpx.Response:
@@ -337,7 +345,7 @@ def _page(name: str) -> Any:
 
 
 SETUP_TEMPLATE = r'''#!/usr/bin/env bash
-# Libre Agent PC setup - generated by the gateway for one device.
+# Libre Thinker PC setup - generated by the gateway for one device.
 set -euo pipefail
 
 GATEWAY=__GATEWAY__
@@ -349,7 +357,7 @@ if ! command -v unopkg >/dev/null; then
   echo "unopkg not found: install LibreOffice 24.8 or newer" >&2
   if command -v flatpak >/dev/null && flatpak info org.libreoffice.LibreOffice >/dev/null 2>&1; then
     echo "Flatpak LibreOffice found; install the extension by hand instead:" >&2
-    echo "  flatpak run --command=unopkg org.libreoffice.LibreOffice add <LibreAgent.oxt>" >&2
+    echo "  flatpak run --command=unopkg org.libreoffice.LibreOffice add <LibreThinker.oxt>" >&2
     echo "  then run provision/provision_pc.py with --gateway and --token" >&2
   fi
   exit 1
@@ -372,11 +380,11 @@ fi
 
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 echo "Downloading WriterAgent extension..."
-curl -fsSL -H "Authorization: Bearer $TOKEN" "$GATEWAY/setup/LibreAgent.oxt" -o "$tmp/LibreAgent.oxt"
+curl -fsSL -H "Authorization: Bearer $TOKEN" "$GATEWAY/setup/LibreThinker.oxt" -o "$tmp/LibreThinker.oxt"
 # Install the extension, retrying once if a stale lock blocks LibreOffice.
 install_oxt() {
   unopkg remove org.extension.writeragent >/dev/null 2>&1 || true
-  unopkg add -f "$tmp/LibreAgent.oxt" 2>&1
+  unopkg add -f "$tmp/LibreThinker.oxt" 2>&1
 }
 
 add_out=$(install_oxt) && add_ok=1 || add_ok=0
@@ -437,7 +445,7 @@ echo "Open LibreOffice and try =PROMPT(\"hello\") in Calc."
 def _public_base(request: Request) -> str:
     base = PUBLIC_URL or str(request.base_url).rstrip("/")
     if not re.fullmatch(r"https?://[A-Za-z0-9.\-:\[\]]+", base):
-        raise HTTPException(status_code=400, detail="Cannot determine a safe gateway URL; set CELLSCRIBE_PUBLIC_URL")
+        raise HTTPException(status_code=400, detail="Cannot determine a safe gateway URL; set LIBRETHINKER_PUBLIC_URL")
     return base
 
 
@@ -456,7 +464,7 @@ def _setup_params(request: Request, device: dict[str, Any]) -> tuple[str, str, s
     return base, token, model
 
 
-@app.get("/setup/LibreAgent.oxt")
+@app.get("/setup/LibreThinker.oxt")
 async def setup_oxt(request: Request) -> Response:
     """The single extension (WriterAgent + token entry); identical for every PC."""
     if not os.path.exists(OXT_PATH):
@@ -465,7 +473,7 @@ async def setup_oxt(request: Request) -> Response:
     return Response(
         data,
         media_type="application/vnd.openofficeorg.extension",
-        headers={"Content-Disposition": 'attachment; filename="LibreAgent.oxt"'},
+        headers={"Content-Disposition": 'attachment; filename="LibreThinker.oxt"'},
     )
 
 
@@ -488,7 +496,7 @@ async def list_models(device: dict[str, Any] = Depends(_require_device)) -> dict
     return {
         "object": "list",
         "data": [
-            {"id": name, "object": "model", "created": 0, "owned_by": "cellscribe"}
+            {"id": name, "object": "model", "created": 0, "owned_by": "librethinker"}
             for name in models
         ],
     }

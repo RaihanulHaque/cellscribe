@@ -1,13 +1,15 @@
-# Benchmark: open-weight models for Libre Agent
+# Benchmark: open-weight models for Libre Thinker
 
-Can a model small enough to host in-house do the work Libre Agent asks of it? This page records
-one benchmark run on 17 November 2026 against the same office tasks used to validate the gateway.
+Can a model small enough to host in-house do the work Libre Thinker asks of it? This page records
+benchmark runs on 17 and 18 November 2026 against the same office tasks used to validate the gateway.
 
 ## Summary
 
 - **Qwen 3.8 27B matched the hosted model.** Both Qwen 3.8 27B and DeepSeek V4.1 Flash (the current
   default) passed 21 of 22 tasks.
-- **Nothing smaller came close.** The best of the rest scored 17 of 22.
+- **Mistral Large 4 scored 20 of 22**, close behind, but at about 3.4 times Qwen's cost and 5.5 times
+  DeepSeek's ($0.48 against $0.14 and $0.09), and it was slower.
+- **Nothing smaller came close.** The best of the smaller models scored 17 of 22.
 - **A 27B-class model looks viable for self-hosting**, but this test measured answer quality only.
   It did not measure speed on your own hardware (see [Limitations](#limitations)).
 
@@ -20,6 +22,7 @@ and tool time only, not opening files or restarting LibreOffice.
 | --- | --- | --- | --- | --- | --- | --- |
 | Qwen 3.8 27B (`qwen/qwen3.8-27b`) | **21**/22 | 11/11 | 10/11 | $0.14 | 7.8 min | 0 |
 | DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash-1017`) | **21**/22 | 10/11 | 11/11 | $0.09 | 6.7 min | 3 |
+| Mistral Large 4 (`mistralai/mistral-large-4-0`) | **20**/22 | 10/11 | 10/11 | $0.48 | 22.2 min | 3 |
 | Qwen 3.6 35B-A3B (`qwen/qwen3.6-35b-a3b`) | **17**/22 | 8/11 | 9/11 | $0.09 | 17.0 min | 13 |
 | Gemma 4 31B (`google/gemma-4-31b-it`) | **17**/22 | 9/11 | 8/11 | $0.10 | 4.6 min | 11 |
 | gpt-oss-20B (`openai/gpt-oss-20b`) | **14**/22 | 5/11 | 9/11 | $0.05 | 5.0 min | 4 |
@@ -27,6 +30,10 @@ and tool time only, not opening files or restarting LibreOffice.
 | Gemma 4 26B-A4B (`google/gemma-4-26b-a4b-it`) | **14**/22 | 6/11 | 8/11 | $0.07 | 8.9 min | 10 |
 | Ministral 14B (`mistralai/ministral-14b-2512`) | **13**/22 | 4/11 | 9/11 | $0.11 | 13.2 min | 4 |
 | Mistral Small 3.2 (`mistralai/mistral-small-3.2-24b-instruct`) | **11**/22 | 6/11 | 5/11 | $0.04 | 12.9 min | 14 |
+
+Mistral Large 4 was run on 18 November, after the others. Its Writer half was re-run after the
+OpenRouter account ran out of credits partway through the first attempt; the Calc half is from the
+first attempt. Its Calc chart task alone took about 8 minutes.
 
 Qwen 3.5 9B's Calc chart task never recorded a result (the run hit its time limit), so its Calc
 figure is out of 10 and its total is a floor.
@@ -66,30 +73,30 @@ figure is out of 10 and its total is a floor.
 
 ## Pass/fail by model and task
 
-| Task | Qwen 3.8 27B | DeepSeek V4.1 Flash | Qwen 3.6 35B-A3B | Gemma 4 31B | gpt-oss-20B | Qwen 3.5 9B | Gemma 4 26B-A4B | Ministral 14B | Mistral Small 3.2 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Calc: Management summary | P | F | P | F | P | P | F | F | F |
-| Calc: Outstanding dues | P | P | F | F | F | F | F | F | F |
-| Calc: Filtered count | P | P | P | P | F | P | P | F | F |
-| Calc: Monthly revenue | P | P | P | P | F | P | P | P | P |
-| Calc: VAT columns | P | P | F | P | F | P | P | F | P |
-| Calc: Totals row | P | P | P | P | F | P | F | F | F |
-| Calc: Region summary sheet | P | P | P | P | P | P | F | F | P |
-| Calc: Sort | P | P | F | P | P | P | P | P | P |
-| Calc: Highlight unpaid | P | P | P | P | F | P | P | F | F |
-| Calc: Professional formatting | P | P | P | P | P | P | P | P | P |
-| Calc: Chart | P | P | P | P | P | - | F | P | P |
-| Writer: Summarise report | F | P | P | P | F | F | F | P | F |
-| Writer: Ask a question | P | P | P | P | P | P | P | P | P |
-| Writer: Executive summary | P | P | P | F | F | F | F | P | P |
-| Writer: Proofread memo | P | P | F | F | P | P | P | P | F |
-| Writer: Formal tone | P | P | P | P | P | F | P | P | P |
-| Writer: Notes to minutes | P | P | P | F | P | F | P | P | P |
-| Writer: Letter from points | P | P | P | P | P | P | P | P | P |
-| Writer: Translate to Bangla | P | P | F | P | P | P | P | P | F |
-| Writer: Risk table | P | P | P | P | P | F | P | P | F |
-| Writer: Apply headings | P | P | P | P | P | P | F | F | F |
-| Writer: Find and replace | P | P | P | P | P | F | P | F | F |
+| Task | Qwen 3.8 27B | DeepSeek V4.1 Flash | Mistral Large 4 | Qwen 3.6 35B-A3B | Gemma 4 31B | gpt-oss-20B | Qwen 3.5 9B | Gemma 4 26B-A4B | Ministral 14B | Mistral Small 3.2 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Calc: Management summary | P | F | F | P | F | P | P | F | F | F |
+| Calc: Outstanding dues | P | P | P | F | F | F | F | F | F | F |
+| Calc: Filtered count | P | P | P | P | P | F | P | P | F | F |
+| Calc: Monthly revenue | P | P | P | P | P | F | P | P | P | P |
+| Calc: VAT columns | P | P | P | F | P | F | P | P | F | P |
+| Calc: Totals row | P | P | P | P | P | F | P | F | F | F |
+| Calc: Region summary sheet | P | P | P | P | P | P | P | F | F | P |
+| Calc: Sort | P | P | P | F | P | P | P | P | P | P |
+| Calc: Highlight unpaid | P | P | P | P | P | F | P | P | F | F |
+| Calc: Professional formatting | P | P | P | P | P | P | P | P | P | P |
+| Calc: Chart | P | P | P | P | P | P | - | F | P | P |
+| Writer: Summarise report | F | P | P | P | P | F | F | F | P | F |
+| Writer: Ask a question | P | P | P | P | P | P | P | P | P | P |
+| Writer: Executive summary | P | P | P | P | F | F | F | F | P | P |
+| Writer: Proofread memo | P | P | P | F | F | P | P | P | P | F |
+| Writer: Formal tone | P | P | P | P | P | P | F | P | P | P |
+| Writer: Notes to minutes | P | P | P | P | F | P | F | P | P | P |
+| Writer: Letter from points | P | P | P | P | P | P | P | P | P | P |
+| Writer: Translate to Bangla | P | P | F | F | P | P | P | P | P | F |
+| Writer: Risk table | P | P | P | P | P | P | F | P | P | F |
+| Writer: Apply headings | P | P | P | P | P | P | P | F | F | F |
+| Writer: Find and replace | P | P | P | P | P | P | F | P | F | F |
 
 ## How the test was run
 
@@ -109,6 +116,9 @@ figure is out of 10 and its total is a floor.
 - **Claimed work that was not done.** Several smaller models reported a finished table, heading style
   or replacement that was not in the document. Ministral 14B and Mistral Small 3.2 also stated wrong
   numbers confidently (14 and 15 Dhaka invoices in March; the correct answer is 11).
+- **Mistral Large 4** failed the management summary (no unpaid count, as DeepSeek did) and the Bangla
+  translation, whose output was not in Bangla. It was the most expensive model per task, and its
+  chart task took about 8 minutes.
 - **Raw tool calls in the reply.** gpt-oss-20B printed an internal tool call as its answer on one
   task.
 - **Multi-step Calc edits.** Sort, a new summary sheet and a chart separated the models most. The

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Libre Agent Gateway</title>
+<title>Libre Thinker Gateway</title>
 <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <link rel="stylesheet" href="/assets/admin.css">
 </head>
@@ -117,7 +117,7 @@ async function loadStats() {
     kpi("Latency", t.latency_p50 === null ? "—" : (t.latency_p50 / 1000).toFixed(1) + " s",
         t.latency_p95 === null ? "median" : "median, p95 " + (t.latency_p95 / 1000).toFixed(1) + " s"),
   ].join("");
-  $("statNote").textContent = t.unpriced ? t.unpriced + " requests have no recorded cost (logged before cost tracking, or the model has no price in CELLSCRIBE_PRICES)" : "";
+  $("statNote").textContent = t.unpriced ? t.unpriced + " requests have no recorded cost (logged before cost tracking, or the model has no price in LIBRETHINKER_PRICES)" : "";
   renderChart(s.by_day);
   renderModels(s.by_model);
 }
@@ -224,7 +224,7 @@ async function loadModels() {
 }
 
 // All ticked means "every gateway model" (stored empty), so the PC follows
-// later changes to CELLSCRIBE_ALLOWED_MODELS instead of a frozen list.
+// later changes to LIBRETHINKER_ALLOWED_MODELS instead of a frozen list.
 function pickedModels() {
   const boxes = [...document.querySelectorAll("#modelPicker input")];
   const picked = boxes.filter((el) => el.checked).map((el) => el.value);
@@ -279,8 +279,8 @@ $("createDevice").onclick = async () => {
       escapeHtml(res.token) + "</code><br><span class='muted'>On the office PC, with LibreOffice closed, run:</span><br><code>curl -fsSL -H \"Authorization: Bearer " +
       escapeHtml(res.token) + "\" " + location.origin + "/setup.sh | bash</code>" +
       "<br><br><span class='muted'>No command needed: give the employee this token and the file below (same for every PC). " +
-      "They install it (double-click), restart LibreOffice, then use Tools &gt; Libre Agent: Enter access token.</span><br>" +
-      "<a href='/setup/LibreAgent.oxt' download>LibreAgent.oxt</a>";
+      "They install it (double-click), restart LibreOffice, then use Tools &gt; Libre Thinker: Enter access token.</span><br>" +
+      "<a href='/setup/LibreThinker.oxt' download>LibreThinker.oxt</a>";
     $("createState").className = "muted";
     $("createState").textContent = "Created device " + res.id;
     $("deviceName").value = "";

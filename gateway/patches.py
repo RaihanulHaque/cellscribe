@@ -1,6 +1,6 @@
-# CellScribe - build-time patches applied to the vendored WriterAgent package
+# Libre Thinker - build-time patches applied to the vendored WriterAgent package
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Small, exact patches to WriterAgent, applied while the gateway builds CellScribe.oxt.
+"""Small, exact patches to WriterAgent, applied while the gateway builds LibreThinker.oxt.
 
 vendor/WriterAgent.oxt itself is never modified. Each patch is an exact
 search/replace that must match once; if a WriterAgent upgrade changes the
@@ -33,13 +33,13 @@ MAX_TOOL_ROUNDS = 20
 
 _CALC_SHEET_CSV = '''
 
-# --- CellScribe: include the sheet's values in chat context -----------------
+# --- Libre Thinker: include the sheet's values in chat context -----------------
 # WriterAgent only sent row 1 as "headers", so the model never saw the data
 # and either guessed or read it 80 cells at a time.
-_CS_CSV_MAX_CELLS = 30000
+_LT_CSV_MAX_CELLS = 30000
 
 
-def _cs_col_letters(index: int) -> str:
+def _lt_col_letters(index: int) -> str:
     letters = ""
     index += 1
     while index:
@@ -48,22 +48,22 @@ def _cs_col_letters(index: int) -> str:
     return letters
 
 
-import re as _cs_re
+import re as _lt_re
 
 # Displayed text of a plain number: optional currency/prefix, digits with
 # thousands separators, optional decimals, optional suffix such as %.
-_CS_NUMERIC_TEXT = _cs_re.compile(r"[^\\d]*-?[\\d,]*\\.?\\d+[^\\d]*")
-_CS_TOTAL_FORMULA = _cs_re.compile(r"^=.*\\b(SUM|SUBTOTAL|AGGREGATE)\\s*\\(")
-_CS_TOTAL_LABEL = _cs_re.compile(r"^\\s*(grand\\s+|sub\\s*-?\\s*)?totals?\\b", _cs_re.I)
+_LT_NUMERIC_TEXT = _lt_re.compile(r"[^\\d]*-?[\\d,]*\\.?\\d+[^\\d]*")
+_LT_TOTAL_FORMULA = _lt_re.compile(r"^=.*\\b(SUM|SUBTOTAL|AGGREGATE)\\s*\\(")
+_LT_TOTAL_LABEL = _lt_re.compile(r"^\\s*(grand\\s+|sub\\s*-?\\s*)?totals?\\b", _lt_re.I)
 
 
-def _cs_num(value: float) -> str:
+def _lt_num(value: float) -> str:
     if float(value).is_integer():
         return str(int(value))
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
-def _cs_profile(data: Any, cell_range: Any, sr: int, sc: int, clipped: bool) -> str:
+def _lt_profile(data: Any, cell_range: Any, sr: int, sc: int, clipped: bool) -> str:
     """Column map and exact per-column figures, so the model never adds up rows itself.
 
     The header row is the first of the first 10 rows that is at least 60%
@@ -97,13 +97,13 @@ def _cs_profile(data: Any, cell_range: Any, sr: int, sc: int, clipped: bool) -> 
     totals = set()
     for i, row in enumerate(body):
         frow = formulas[i] if i < len(formulas) else ()
-        if any(isinstance(f, str) and _CS_TOTAL_FORMULA.search(f.upper()) for f in frow) or any(
-            isinstance(v, str) and _CS_TOTAL_LABEL.match(v) for v in row
+        if any(isinstance(f, str) and _LT_TOTAL_FORMULA.search(f.upper()) for f in frow) or any(
+            isinstance(v, str) and _LT_TOTAL_LABEL.match(v) for v in row
         ):
             totals.add(i)
     keep = [i for i in range(len(body)) if i not in totals]
     out = f"Header row {sr + header_idx + 1}. Column map: " + "; ".join(
-        f"{_cs_col_letters(sc + j)}={h}" for j, h in enumerate(header) if h
+        f"{_lt_col_letters(sc + j)}={h}" for j, h in enumerate(header) if h
     ) + "\\n"
     lines = []
     measures: list[tuple[float, int, str]] = []  # (abs total, column index, label)
@@ -113,7 +113,7 @@ def _cs_profile(data: Any, cell_range: Any, sr: int, sc: int, clipped: bool) -> 
         col = [body[i][j] for i in keep if j < len(body[i]) and body[i][j] not in (None, "")]
         if not col:
             continue
-        label = f"{_cs_col_letters(sc + j)}" + (f" ({name})" if name else "")
+        label = f"{_lt_col_letters(sc + j)}" + (f" ({name})" if name else "")
         nums = [v for v in col if not isinstance(v, str)]
         texts = [v for v in col if isinstance(v, str)]
         if nums and len(nums) >= len(texts):
@@ -122,7 +122,7 @@ def _cs_profile(data: Any, cell_range: Any, sr: int, sc: int, clipped: bool) -> 
             lo = min(num_rows, key=lambda i: body[i][j])
             hi = max(num_rows, key=lambda i: body[i][j])
             shown_lo = cell_range.getCellByPosition(j, header_idx + 1 + lo).getString()
-            if shown_lo and not _CS_NUMERIC_TEXT.fullmatch(shown_lo.strip()):
+            if shown_lo and not _LT_NUMERIC_TEXT.fullmatch(shown_lo.strip()):
                 shown_hi = cell_range.getCellByPosition(j, header_idx + 1 + hi).getString()
                 lines.append(f"{label}: {len(nums)} dates/times, earliest {shown_lo}, latest {shown_hi}")
                 date_cols.append((j, label))
@@ -131,8 +131,8 @@ def _cs_profile(data: Any, cell_range: Any, sr: int, sc: int, clipped: bool) -> 
             if len(set(nums)) > 1:
                 measures.append((abs(total), j, label))
             lines.append(
-                f"{label}: {len(nums)} numbers, sum={_cs_num(total)}, min={_cs_num(min(nums))}, "
-                f"max={_cs_num(max(nums))}, mean={_cs_num(total / len(nums))}"
+                f"{label}: {len(nums)} numbers, sum={_lt_num(total)}, min={_lt_num(min(nums))}, "
+                f"max={_lt_num(max(nums))}, mean={_lt_num(total / len(nums))}"
             )
         else:
             counts: dict[str, int] = {}
@@ -152,10 +152,10 @@ def _cs_profile(data: Any, cell_range: Any, sr: int, sc: int, clipped: bool) -> 
         scope += ", excluding total/subtotal row(s) " + ", ".join(str(sr + header_idx + 2 + i) for i in sorted(totals))
     out += f"Column profile (computed exactly over {scope} below the header; use these figures for totals/counts instead of adding rows yourself):\\n"
     out += "\\n".join(lines) + "\\n"
-    return out + _cs_group_totals(body, keep, measures, dims, date_cols)
+    return out + _lt_group_totals(body, keep, measures, dims, date_cols)
 
 
-def _cs_group_totals(body: Any, keep: list[int], measures: Any, dims: Any, date_cols: Any) -> str:
+def _lt_group_totals(body: Any, keep: list[int], measures: Any, dims: Any, date_cols: Any) -> str:
     """Pivot-style sums of the two largest numeric columns by each category and by month.
 
     These are the questions offices ask most ("revenue by region", "by
@@ -190,14 +190,14 @@ def _cs_group_totals(body: Any, keep: list[int], measures: Any, dims: Any, date_
             if len(sums) < 2 or (keyfn and len(sums) > 24):
                 continue
             ordered = sorted(sums.items()) if keyfn else sorted(sums.items(), key=lambda kv: -kv[1])
-            lines.append(f"Sum of {mlabel} per {glabel}: " + ", ".join(f"{k}={_cs_num(v)}" for k, v in ordered))
+            lines.append(f"Sum of {mlabel} per {glabel}: " + ", ".join(f"{k}={_lt_num(v)}" for k, v in ordered))
     text = "\\n".join(lines)
     if len(text) > 6000:
         text = text[:6000].rsplit("\\n", 1)[0] + "\\n[more group totals omitted]"
     return ("Group totals (exact):\\n" + text + "\\n") if text else ""
 
 
-def _cs_sheet_csv(bridge: Any, sheet_name: str, budget: int) -> str:
+def _lt_sheet_csv(bridge: Any, sheet_name: str, budget: int) -> str:
     """Used range of *sheet_name* as CSV lines prefixed with the row number.
 
     Values are the displayed text (dates, times and percentages as shown), not
@@ -213,7 +213,7 @@ def _cs_sheet_csv(bridge: Any, sheet_name: str, budget: int) -> str:
     addr = used_range_address(sheet)
     sc, sr, ec, er = addr.StartColumn, addr.StartRow, addr.EndColumn, addr.EndRow
     cols = ec - sc + 1
-    last_row = min(er, sr + max(1, _CS_CSV_MAX_CELLS // max(cols, 1)) - 1)
+    last_row = min(er, sr + max(1, _LT_CSV_MAX_CELLS // max(cols, 1)) - 1)
     cell_range = sheet.getCellRangeByPosition(sc, sr, ec, last_row)
     data = cell_range.getDataArray()
     if not any(v not in (None, "") for row in data for v in row):
@@ -221,7 +221,7 @@ def _cs_sheet_csv(bridge: Any, sheet_name: str, budget: int) -> str:
 
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\\n")
-    writer.writerow(["Row"] + [_cs_col_letters(c) for c in range(sc, ec + 1)])
+    writer.writerow(["Row"] + [_lt_col_letters(c) for c in range(sc, ec + 1)])
     lines = [buf.getvalue()]
     used = len(lines[0])
     shown_until = None
@@ -250,14 +250,14 @@ def _cs_sheet_csv(bridge: Any, sheet_name: str, budget: int) -> str:
     else:
         shown_until = last_row + 1
 
-    out = _cs_profile(data, cell_range, sr, sc, last_row < er)
+    out = _lt_profile(data, cell_range, sr, sc, last_row < er)
     out += "Sheet Data (CSV; first field is the row number, header gives column letters; empty rows skipped):\\n"
     out += "".join(lines)
     if shown_until is None or shown_until < er + 1:
         first_missing = (shown_until or sr) + 1
         out += (
             f"[Rows {first_missing}-{er + 1} are NOT shown (too large for context). "
-            f'Read them with read_cell_range, e.g. sheet="{sheet_name}" range A{first_missing}:{_cs_col_letters(ec)}{min(er + 1, first_missing + 40)}.]\\n'
+            f'Read them with read_cell_range, e.g. sheet="{sheet_name}" range A{first_missing}:{_lt_col_letters(ec)}{min(er + 1, first_missing + 40)}.]\\n'
         )
     else:
         out += "[All rows of this sheet are shown above.]\\n"
@@ -266,8 +266,8 @@ def _cs_sheet_csv(bridge: Any, sheet_name: str, budget: int) -> str:
 
 
 # Plain-language progress for the sidebar, in place of "[Running tool: x...]".
-_FRIENDLY_PROGRESS = '''# --- CellScribe: plain-language progress lines -------------------------------
-_CS_TOOL_WORDS = {
+_FRIENDLY_PROGRESS = '''# --- Libre Thinker: plain-language progress lines -------------------------------
+_LT_TOOL_WORDS = {
     "write_formula_range": "Writing to {where}",
     "insert_cell_html": "Writing to {where}",
     "read_cell_range": "Reading {where}",
@@ -286,7 +286,7 @@ _CS_TOOL_WORDS = {
     "web_research": "Searching the web",
     "list_open_documents": "Checking open documents",
 }
-_CS_DOMAIN_WORDS = {
+_LT_DOMAIN_WORDS = {
     "charts": "Creating the chart",
     "sheets": "Setting up the sheet",
     "ranges": "Rearranging the data",
@@ -299,7 +299,7 @@ _CS_DOMAIN_WORDS = {
 }
 
 
-def _cs_where(func_args: Mapping[str, Any]) -> str:
+def _lt_where(func_args: Mapping[str, Any]) -> str:
     raw = func_args.get("range") or func_args.get("sheet") or ""
     if isinstance(raw, (list, tuple)):
         raw = ", ".join(str(r) for r in raw[:2]) + (" and more" if len(raw) > 2 else "")
@@ -307,19 +307,19 @@ def _cs_where(func_args: Mapping[str, Any]) -> str:
     return text if text and len(text) <= 40 else "the sheet"
 
 
-def _cs_progress(func_name: str, func_args: Mapping[str, Any]) -> str:
+def _lt_progress(func_name: str, func_args: Mapping[str, Any]) -> str:
     if func_name in DELEGATE_GATEWAY_TOOL_NAMES:
-        return _CS_DOMAIN_WORDS.get(domain_from_delegate_args(func_args), "Working on it")
-    words = _CS_TOOL_WORDS.get(func_name)
+        return _LT_DOMAIN_WORDS.get(domain_from_delegate_args(func_args), "Working on it")
+    words = _LT_TOOL_WORDS.get(func_name)
     if words is None:
         return "Working on it"
-    return words.format(where=_cs_where(func_args)) if "{where}" in words else words
+    return words.format(where=_lt_where(func_args)) if "{where}" in words else words
 
 
 '''
 
 _DROPPED_PASSAGES = '''
-def _cs_dropped_passages(before, after):
+def _lt_dropped_passages(before, after):
     """Passages of *before* that a full rewrite lost, or [] when it was not an edit.
 
     Fuzzy line matching (so fixed typos or a reworded sentence count as kept).
@@ -380,7 +380,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "plugin/framework/constants.py": [
         (
             "CHAT_DOCUMENT_CONTEXT_MAX_CHARS = 8000\n",
-            f"CHAT_DOCUMENT_CONTEXT_MAX_CHARS = {CONTEXT_CHARS}  # CellScribe: WriterAgent ships 8000\n",
+            f"CHAT_DOCUMENT_CONTEXT_MAX_CHARS = {CONTEXT_CHARS}  # Libre Thinker: WriterAgent ships 8000\n",
         ),
     ],
     # --- Calc: send the sheet's values ---------------------------------------
@@ -394,18 +394,18 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "        # Add selection context if available\n",
             "        ctx_str += f\"Columns: {_format_columns(summary['headers'])}\\n\"\n"
             "        try:\n"
-            "            ctx_str += _cs_sheet_csv(vs.bridge, summary[\"sheet_name\"], max_context - len(ctx_str) - 2500)\n"
+            "            ctx_str += _lt_sheet_csv(vs.bridge, summary[\"sheet_name\"], max_context - len(ctx_str) - 2500)\n"
             "            for _other in vs.names:\n"
             "                if _other == summary[\"sheet_name\"] or max_context - len(ctx_str) - 2500 < 1500:\n"
             "                    continue\n"
             "                _other_sheet = vs.bridge.get_sheet(_other)\n"
             "                _addr = used_range_address(_other_sheet)\n"
             "                ctx_str += f\"\\n--- Other sheet: {_other} (used range {format_range(_addr.StartColumn, _addr.StartRow, _addr.EndColumn, _addr.EndRow, collapse_single=False)}; pass sheet=\\\"{_other}\\\" to tools) ---\\n\"\n"
-            "                ctx_str += _cs_sheet_csv(vs.bridge, _other, max_context - len(ctx_str) - 2500)\n"
+            "                ctx_str += _lt_sheet_csv(vs.bridge, _other, max_context - len(ctx_str) - 2500)\n"
             "        except Exception as exc:\n"
             "            if is_real_disposal(exc):\n"
             "                raise DocumentDisposedError(\"Calc document disposed during data read\", object_type=\"calc\") from exc\n"
-            "            log.warning(\"CellScribe sheet CSV failed: %s\", exc)\n\n"
+            "            log.warning(\"Libre Thinker sheet CSV failed: %s\", exc)\n\n"
             "        # Add selection context if available\n",
         ),
     ],
@@ -424,7 +424,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "        return []\n"
             "    if isinstance(raw, str):\n"
             "        text = raw.strip()\n"
-            "        if text.startswith(\"[\") and text.endswith(\"]\"):  # CellScribe: JSON list sent as a string\n"
+            "        if text.startswith(\"[\") and text.endswith(\"]\"):  # Libre Thinker: JSON list sent as a string\n"
             "            import json\n"
             "            try:\n"
             "                parsed = json.loads(text)\n"
@@ -433,7 +433,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            if isinstance(parsed, list) and parsed and all(isinstance(p, str) for p in parsed):\n"
             "                return parsed\n"
             "        return [raw]\n"
-            "    if isinstance(raw, (list, tuple)):  # CellScribe: ['[\"O1:P5\"]'] after schema coercion\n"
+            "    if isinstance(raw, (list, tuple)):  # Libre Thinker: ['[\"O1:P5\"]'] after schema coercion\n"
             "        flat: list[Any] = []\n"
             "        for item in raw:\n"
             "            flat.extend(_range_args(item) if isinstance(item, str) and item.strip().startswith(\"[\") else [item])\n"
@@ -456,7 +456,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             '    scripting_only_parameters: frozenset[str] = frozenset({"number_format"})\n',
-            "    scripting_only_parameters: frozenset[str] = frozenset()  # CellScribe: number_format exposed\n",
+            "    scripting_only_parameters: frozenset[str] = frozenset()  # Libre Thinker: number_format exposed\n",
         ),
         (
             "        if len(rn) == 0:\n"
@@ -466,7 +466,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '            return self._tool_error("range is required")\n\n'
             "        froze = None\n"
             '        freeze_at = kwargs.get("freeze_at")\n'
-            "        if isinstance(freeze_at, str) and freeze_at.strip():  # CellScribe: freeze panes\n"
+            "        if isinstance(freeze_at, str) and freeze_at.strip():  # Libre Thinker: freeze panes\n"
             "            import re as _re\n"
             '            m = _re.fullmatch(r"(?:.*\\.)?\\$?([A-Za-z]{1,3})\\$?(\\d+)", freeze_at.strip())\n'
             "            if not m:\n"
@@ -497,7 +497,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            and len(per_cell) == len(rn)\n"
             "            and all(not isinstance(v, (list, tuple, dict, bool)) and v is not None for v in per_cell)\n"
             "            and all(_a1_range_shape(r) == (1, 1, 1) for r in rn)\n"
-            "        ):  # CellScribe: one value per single-cell range\n"
+            "        ):  # Libre Thinker: one value per single-cell range\n"
             "            values_iter = iter(str(v) for v in per_cell)\n"
             "            return _mutate_ranges(\n"
             "                self, ctx.doc, rn, \"WriterAgent: Write formulas\",\n"
@@ -508,7 +508,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             "_READ_CELL_RANGE_MAX_CELLS = 80\n",
-            f"_READ_CELL_RANGE_MAX_CELLS = {READ_RANGE_MAX_CELLS}  # CellScribe: WriterAgent ships 80\n",
+            f"_READ_CELL_RANGE_MAX_CELLS = {READ_RANGE_MAX_CELLS}  # Libre Thinker: WriterAgent ships 80\n",
         ),
         (
             '    "Reductions that spill a small result: write =PY into one empty cell "\n'
@@ -525,7 +525,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         (
             '    name: str | None = "upsert_memory"\n',
             '    name: str | None = "upsert_memory"\n'
-            "    # CellScribe: off the sidebar tool list (mcp tier is excluded by default).\n",
+            "    # Libre Thinker: off the sidebar tool list (mcp tier is excluded by default).\n",
         ),
         (
             "    uno_services: list[str] | None = None\n"
@@ -549,14 +549,14 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            excerpt = _text_helpers._read_writer_text_slice(model, 0, take)\n",
             "            take = min(doc_len, max_context)\n"
             "            excerpt = _text_helpers._read_writer_text_slice(model, 0, take)\n"
-            "            try:  # CellScribe: fall back to the full text when the cursor read came up short\n"
-            "                _cs_full = model.getText().getString()\n"
-            "                _cs_redlines = model.getRedlines().createEnumeration().hasMoreElements()\n"
+            "            try:  # Libre Thinker: fall back to the full text when the cursor read came up short\n"
+            "                _lt_full = model.getText().getString()\n"
+            "                _lt_redlines = model.getRedlines().createEnumeration().hasMoreElements()\n"
             "            except Exception:\n"
-            "                _cs_full, _cs_redlines = \"\", True\n"
-            "            if not _cs_redlines and len(_cs_full) <= max_context and len(excerpt.strip()) + 5 < len(_cs_full.strip()):\n"
-            "                excerpt = _cs_full\n"
-            "                shown_len = len(_cs_full)\n"
+            "                _lt_full, _lt_redlines = \"\", True\n"
+            "            if not _lt_redlines and len(_lt_full) <= max_context and len(excerpt.strip()) + 5 < len(_lt_full.strip()):\n"
+            "                excerpt = _lt_full\n"
+            "                shown_len = len(_lt_full)\n"
             "                start_offset = end_offset = 0  # selection markers need cursor offsets\n",
         ),
     ],
@@ -570,29 +570,29 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            session = _open_session()\n"
             "            with session:\n",
             '        if target == "full_document":\n'
-            "            try:  # CellScribe: remember the text to detect dropped passages\n"
-            "                _cs_before = ctx.doc.getText().getString()\n"
+            "            try:  # Libre Thinker: remember the text to detect dropped passages\n"
+            "                _lt_before = ctx.doc.getText().getString()\n"
             "            except Exception:\n"
-            "                _cs_before = None\n"
+            "                _lt_before = None\n"
             "            session = _open_session()\n"
             "            with session:\n",
         ),
         (
             '            return {"status": "ok", "message": "Replaced entire document."}, session\n'
             '        if target == "end":\n',
-            "            _cs_result = {\"status\": \"ok\", \"message\": \"Replaced entire document.\"}\n"
+            "            _lt_result = {\"status\": \"ok\", \"message\": \"Replaced entire document.\"}\n"
             "            try:\n"
-            "                _cs_lost = _cs_dropped_passages(_cs_before, ctx.doc.getText().getString())\n"
+            "                _lt_lost = _lt_dropped_passages(_lt_before, ctx.doc.getText().getString())\n"
             "            except Exception:\n"
-            "                _cs_lost = []\n"
-            "            if _cs_lost:\n"
-            "                _cs_result[\"removed_passages\"] = _cs_lost\n"
-            "                _cs_result[\"message\"] = (\n"
+            "                _lt_lost = []\n"
+            "            if _lt_lost:\n"
+            "                _lt_result[\"removed_passages\"] = _lt_lost\n"
+            "                _lt_result[\"message\"] = (\n"
             "                    \"Replaced entire document, but these passages from the previous version are no longer in it: \"\n"
-            "                    + \" | \".join(_cs_lost)\n"
+            "                    + \" | \".join(_lt_lost)\n"
             "                    + \". Unless the user asked to remove them, restore them now (insert them where they belong) and do not report the task as done before they are back.\"\n"
             "                )\n"
-            "            return _cs_result, session\n"
+            "            return _lt_result, session\n"
             '        if target == "end":\n',
         ),
         (
@@ -608,7 +608,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "                if p.Name == \"SortFields\":\n"
             "                    p.Value = (sort_field,)\n",
             "                if p.Name == \"SortFields\":\n"
-            "                    import uno as _uno  # CellScribe: typed sequence, or Calc ignores it\n"
+            "                    import uno as _uno  # Libre Thinker: typed sequence, or Calc ignores it\n"
             "                    p.Value = _uno.Any(\"[]com.sun.star.table.TableSortField\", (sort_field,))\n",
         ),
         (
@@ -643,11 +643,11 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             '        return _("AI: I can help you with formulas, data analysis, and colorful charts. Try me!")\n',
-            '        return _("Hi, I\'m Libre Agent. Ask me to summarise this sheet, answer questions about it, add formulas, sort, format or make a chart.")\n',
+            '        return _("Hi, I\'m Libre Thinker. Ask me to summarise this sheet, answer questions about it, add formulas, sort, format or make a chart.")\n',
         ),
         (
             '    return _("AI: I can edit or translate your document instantly with professional formatting and color. Try me!")\n',
-            '    return _("Hi, I\'m Libre Agent. Ask me to summarise, rewrite, proofread, translate or format this document.")\n',
+            '    return _("Hi, I\'m Libre Thinker. Ask me to summarise, rewrite, proofread, translate or format this document.")\n',
         ),
         (
             'MEMORY_GUIDANCE = """MEMORY:\n'
@@ -656,12 +656,12 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "- Never store credentials, tokens, or one-off document text.\n"
             "- Keep values short.\n"
             'Prioritize what reduces future user steering."""\n',
-            'MEMORY_GUIDANCE = ""  # CellScribe: no cross-document memory\n',
+            'MEMORY_GUIDANCE = ""  # Libre Thinker: no cross-document memory\n',
         ),
         (
             '    """Read MemoryStore and return a fenced, capped user profile block, or empty string."""\n',
             '    """Read MemoryStore and return a fenced, capped user profile block, or empty string."""\n'
-            "    return \"\"  # CellScribe: memory must not carry between documents\n",
+            "    return \"\"  # Libre Thinker: memory must not carry between documents\n",
         ),
         (
             "Python on sheet data: write_formula_range of =PY (that tool's description).\n",
@@ -699,7 +699,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             _FRIENDLY_PROGRESS
             + "def format_tool_running_ui(func_name: str, func_args: Mapping[str, Any]) -> tuple[str, str]:\n"
             '    """Status bar text and chat run-line when a tool starts executing."""\n'
-            "    _cs = _cs_progress(func_name, func_args)  # CellScribe: plain language\n"
+            "    _cs = _lt_progress(func_name, func_args)  # Libre Thinker: plain language\n"
             '    return _cs, "\\u2022 " + _cs + "\\u2026\\n"\n',
         ),
         (
@@ -709,7 +709,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '    """Chat append body for a tool result (error or success); does not mutate *result_data*."""\n'
             "    # crosshair: off\n"
             "    note = _result_note(result_data)\n"
-            "    # CellScribe: successes are already announced by the progress line; a\n"
+            "    # Libre Thinker: successes are already announced by the progress line; a\n"
             "    # failed step is retried by the model, so show one plain line, no JSON.\n"
             '    if result_data.get("status") == "error":\n'
             '        return "\\u2022 That step didn\'t work; trying another way\\u2026\\n"\n'
@@ -724,13 +724,13 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '            elif msg.get("tool_calls"):\n'
             '                text += "\\n%s [Thinking...]" % _("Assistant:")\n',
             '            elif msg.get("tool_calls"):\n'
-            "                pass  # CellScribe: no [Thinking...] rows\n",
+            "                pass  # Libre Thinker: no [Thinking...] rows\n",
         ),
         (
             '            elif msg.get("tool_calls"):\n'
             '                items.append(("assistant", "[Thinking...]"))\n',
             '            elif msg.get("tool_calls"):\n'
-            "                pass  # CellScribe: no [Thinking...] rows\n",
+            "                pass  # Libre Thinker: no [Thinking...] rows\n",
         ),
     ],
     "plugin/chatbot/panel.py": [
@@ -740,13 +740,13 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '    def _append_response(self, text: str, is_thinking: bool = False, role: str = "assistant") -> None:\n'
             '        """Project ``text`` onto the session, then draw that list.\n'
             "\n"
-            "        CellScribe: the model's private reasoning is not shown in the chat.\n",
+            "        Libre Thinker: the model's private reasoning is not shown in the chat.\n",
         ),
         (
             "        from plugin.chatbot.tool_loop_actions import TurnController, current_turn\n\n"
             "        turn = current_turn(self)\n"
             "        session = self.session\n",
-            "        if is_thinking:  # CellScribe: hide [Thinking] ... /thinking blocks\n"
+            "        if is_thinking:  # Libre Thinker: hide [Thinking] ... /thinking blocks\n"
             "            return\n"
             "        from plugin.chatbot.tool_loop_actions import TurnController, current_turn\n\n"
             "        turn = current_turn(self)\n"
@@ -756,14 +756,14 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "plugin/chatbot/panel_factory.py": [
         (
             "        header_buttons: list[tuple[str, Any, Any, Any, Any]] = [\n",
-            "        # CellScribe: office users get Ask/Send/Stop/Clear; developer tools\n"
+            "        # Libre Thinker: office users get Ask/Send/Stop/Clear; developer tools\n"
             "        # (Python, LaTeX, file search, voice, mode/model/image pickers) are hidden.\n"
-            "        for _cs_name in (\"btn_python\", \"btn_latex\", \"btn_search\", \"chk_voice\", \"chat_mode_selector\",\n"
+            "        for _lt_name in (\"btn_python\", \"btn_latex\", \"btn_search\", \"chk_voice\", \"chat_mode_selector\",\n"
             "                         \"model_label\", \"model_selector\", \"reasoning_effort_selector\", \"image_model_selector\",\n"
             "                         \"base_size_label\", \"base_size_input\", \"aspect_ratio_selector\"):\n"
-            "            _cs_ctrl = controls.get(_cs_name)\n"
-            "            if _cs_ctrl is not None and hasattr(_cs_ctrl, \"setVisible\"):\n"
-            "                _cs_ctrl.setVisible(False)\n\n"
+            "            _lt_ctrl = controls.get(_lt_name)\n"
+            "            if _lt_ctrl is not None and hasattr(_lt_ctrl, \"setVisible\"):\n"
+            "                _lt_ctrl.setVisible(False)\n\n"
             "        header_buttons: list[tuple[str, Any, Any, Any, Any]] = [\n",
         ),
     ],
@@ -776,10 +776,10 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '        set_control_visible(controls.get("aspect_ratio_selector"), is_image)\n'
             '        set_control_visible(controls.get("base_size_input"), is_image)\n'
             '        set_control_visible(controls.get("base_size_label"), is_image)\n',
-            "        # CellScribe: model and image pickers stay hidden (admin sets the model).\n"
-            '        for _cs_name in ("model_label", "model_selector", "reasoning_effort_selector", "image_model_selector",\n'
+            "        # Libre Thinker: model and image pickers stay hidden (admin sets the model).\n"
+            '        for _lt_name in ("model_label", "model_selector", "reasoning_effort_selector", "image_model_selector",\n'
             '                         "aspect_ratio_selector", "base_size_input", "base_size_label"):\n'
-            "            set_control_visible(controls.get(_cs_name), False)\n",
+            "            set_control_visible(controls.get(_lt_name), False)\n",
         ),
     ],
     # Hidden bottom controls sit inside the button row so they leave no empty
@@ -791,7 +791,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "registry/org/openoffice/Office/UI/Sidebar.xcu": [
         (
             '<value xml:lang="en-US">WriterAgent</value>',
-            '<value xml:lang="en-US">Libre Agent</value>',
+            '<value xml:lang="en-US">Libre Thinker</value>',
         ),
         (  # the separate "Python" sidebar deck is a developer tool: never shown
             'python_32.png</value>\n'
@@ -801,11 +801,11 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             'python_32.png</value>\n'
             '                </prop>\n'
             '                <prop oor:name="ContextList">\n'
-            '                    <value oor:separator=";">com.sun.star.cellscribe.Hidden, any, visible;</value>',
+            '                    <value oor:separator=";">com.sun.star.librethinker.Hidden, any, visible;</value>',
         ),
         (
             '<value xml:lang="en-US">Chat with Document</value>',
-            '<value xml:lang="en-US">Ask Libre Agent</value>',
+            '<value xml:lang="en-US">Ask Libre Thinker</value>',
         ),
     ],
     # --- Bound the agent loop -------------------------------------------------
@@ -820,6 +820,21 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             f"                                             'default': {MAX_TOOL_ROUNDS},\n",
         ),
     ],
+    # --- Remaining visible "WriterAgent" labels --------------------------------
+    "Addons.xcu": [
+        ('<value xml:lang="en-US">WriterAgent</value>', '<value xml:lang="en-US">Libre Thinker</value>'),
+    ],
+    "registry/org/openoffice/Office/UI/WriterWindowState.xcu": [
+        ('<value xml:lang="en-US">WriterAgent Review</value>', '<value xml:lang="en-US">Libre Thinker Review</value>'),
+    ],
+    "plugin/writer/editselection.py": [
+        ('_("WriterAgent: Extend Selection")', '_("Libre Thinker: Extend Selection")'),
+        ('_("WriterAgent: Edit Selection")', '_("Libre Thinker: Edit Selection")'),
+    ],
+    "plugin/calc/editselection.py": [
+        ('_("WriterAgent: Edit Selection (Calc)") if is_edit else _("WriterAgent: Extend Selection (Calc)")',
+         '_("Libre Thinker: Edit Selection (Calc)") if is_edit else _("Libre Thinker: Extend Selection (Calc)")'),
+    ],
 }
 
 
@@ -833,7 +848,7 @@ def apply(filename: str, data: bytes) -> bytes:
         count = text.count(old)
         if count != 1:
             raise ValueError(
-                f"CellScribe patch for {filename} matched {count} times (expected 1); "
+                f"Libre Thinker patch for {filename} matched {count} times (expected 1); "
                 "the vendored WriterAgent changed — update gateway/patches.py"
             )
         text = text.replace(old, new)

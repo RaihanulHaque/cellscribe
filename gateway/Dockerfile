@@ -2,13 +2,13 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    CELLSCRIBE_DB=/data/cellscribe.db
+    LIBRETHINKER_DB=/data/librethinker.db
 
 WORKDIR /app
 
-RUN useradd --create-home --shell /usr/sbin/nologin cellscribe \
+RUN useradd --create-home --shell /usr/sbin/nologin librethinker \
     && mkdir -p /data \
-    && chown -R cellscribe:cellscribe /data
+    && chown -R librethinker:librethinker /data
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -17,7 +17,7 @@ COPY app.py store.py packager.py patches.py admin.html revoked.html requests.htm
 COPY brand/logo.svg brand/logo_64.png ./
 COPY brand ./brand
 
-USER cellscribe
+USER librethinker
 
 EXPOSE 8080
 
