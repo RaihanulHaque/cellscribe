@@ -1,6 +1,6 @@
-# Benchmark: open-weight models for Libre Thinker
+# Benchmark: open-weight models for Libre Thinker Agent
 
-Can a model small enough to host in-house do the work Libre Thinker asks of it? This page records
+Can a model small enough to host in-house do the work Libre Thinker Agent asks of it? This page records
 benchmark runs on 17 and 18 November 2026 against the same office tasks used to validate the gateway.
 
 ## Summary
@@ -100,7 +100,7 @@ figure is out of 10 and its total is a floor.
 
 ## How the test was run
 
-- **Tasks.** The same 22 office tasks as the README's [Tested behaviour](README.md#tested-behaviour):
+- **Tasks.** The same 22 office tasks as the README's [Tested behaviour](docs/tested-behaviour.md):
   11 on `samples/sales_register.csv` (150 invoices) and 11 on the `.docx` files in `samples/`.
   Each task has an automatic check against figures computed from the source data.
 - **Agent.** The real WriterAgent tools and system prompt, driven through LibreOffice 26.2 exactly as

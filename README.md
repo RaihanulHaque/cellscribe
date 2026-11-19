@@ -1,54 +1,87 @@
-<p align="center"><img src="gateway/brand/logo_256.png" width="120" alt="Libre Thinker logo"></p>
+<p align="center"><img src="gateway/brand/logo_256.png" width="120" alt="Libre Thinker Agent logo"></p>
 
-# Libre Thinker
+# Libre Thinker Agent
 
 AI assistance in LibreOffice **Calc** and **Writer** for an office LAN, in the spirit of
 Gemini in Google Sheets and Docs, without giving any employee a copy of the AI provider's API key.
 
-Libre Thinker is a small self-hosted gateway, plus a patched build of the
+Libre Thinker Agent is a small self-hosted gateway, plus a patched build of the
 [WriterAgent](https://github.com/KeithCu/writeragent) extension that it hands out to office PCs.
 Employees ask questions and give instructions in a sidebar; the extension talks only to the
 gateway, and only the gateway holds the provider key (OpenRouter and/or Mistral).
-
-- **One key, one place.** Provider keys live in the gateway's environment file, never on a PC.
-- **One token per PC.** Each computer gets its own revocable bearer token.
-- **Two-minute PC setup.** Install one `.oxt` file and paste a token, or run one generated script.
-- **Answers you can trust.** Calc sees the whole sheet with exactly computed totals; Writer sees
-  the whole document. Both were tested end to end on realistic office work (see
-  [Tested behaviour](#tested-behaviour)).
-- **Usage visibility.** The gateway logs who called which model, when, and whether it worked,
-  without recording document text.
 
 ---
 
 ## Contents
 
+- [How is this different from WriterAgent?](#in-simple-words-how-is-this-different-from-writeragent)
 - [Features](#features)
 - [How it works](#how-it-works)
-- [What employees can do](#what-employees-can-do)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Setting up office PCs](#setting-up-office-pcs)
 - [Verifying the setup](#verifying-the-setup)
 - [Configuration reference](#configuration-reference)
 - [Models and providers](#models-and-providers)
-- [What Libre Thinker changes in WriterAgent](#what-libre-agent-changes-in-writeragent)
-- [Tested behaviour](#tested-behaviour)
-- [Gateway HTTP API](#gateway-http-api)
 - [Admin dashboard](#admin-dashboard)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
 - [Limitations and roadmap](#limitations-and-roadmap)
-- [Repository layout](#repository-layout)
-- [Upstream extension notes](#upstream-extension-notes)
 - [Licence](#licence)
+
+More detail: [Tested behaviour](docs/tested-behaviour.md) · [Changes to WriterAgent](docs/technical-changes.md) ·
+[Gateway API and repository layout](docs/reference.md) · [Office PC setup options](docs/office-pc-setup.md) ·
+[Model benchmark](BENCHMARK.md)
+
+---
+
+## In simple words: how is this different from WriterAgent?
+
+**WriterAgent** is a free LibreOffice extension that adds an AI chat to Writer and Calc. It is made
+for one person: you install it, paste in your own AI provider key, and it works on your computer.
+Libre Thinker Agent is built on top of it. The AI engine and the document tools are still
+WriterAgent's. We add two things around it: a **company gateway** (so a whole office can use it
+safely) and **fixes and tuning** (so the answers are right on everyday office files).
+
+### What a company gets that WriterAgent alone does not
+
+| With WriterAgent alone | With Libre Thinker Agent |
+| --- | --- |
+| Every person needs an AI key, and the key sits on their PC. | Nobody has the key. It stays on one server (the gateway). |
+| If a PC is lost or someone leaves, you must replace the key for everyone. | Each PC has its own token. Switch off one PC and the rest keep working. |
+| Anyone can pick any model and spend any amount. | You choose which models each PC may use. |
+| You cannot see who used the AI or what it cost. Each PC talks straight to the provider. | Every request goes through the gateway. A dashboard shows usage and real cost per day, per model and per PC, and failed requests. It records who called which model and when, never the document text. (The provider still receives the prompt, as before.) |
+| Setup is a manual job on every PC. | Install one file and paste a token, or run one generated script. |
+| WriterAgent checks its own update feed, so PCs can end up on different versions. | The update feed is removed. IT decides which version the PCs run. |
+| One provider at a time. | OpenRouter and Mistral models behind one address, with automatic retries on short network failures. |
+
+### What a user gets that WriterAgent alone does not
+
+| Area | WriterAgent alone | Libre Thinker Agent |
+| --- | --- | --- |
+| Calc: understanding the sheet | Sees only the size of the sheet and the first row. It guesses, or reads the data a few cells at a time. | Sees the whole sheet, with exact totals, counts and dates worked out for it. "Who owes the most?" is answered correctly in one reply. |
+| Calc: sorting | Sort did nothing and gave no error. | Sorting works. |
+| Calc: formatting | Could not set number formats (thousands separators, currency) or freeze the header row. | Can do both. |
+| Writer: reading the document | Missed text that comes after a table, so it sometimes deleted parts it could not see. | Reads the full text. |
+| Writer: long rewrites and translations | Could go paragraph by paragraph and stop half-way. | Does them in one go and warns if a rewrite dropped a passage. |
+| Speed | Spent many steps on colours and styling before doing the request. | Does the request first. Simple questions take one step. |
+| Size of document it can see | About 8,000 characters. | 60,000 characters, enough for a long report or a whole working sheet. |
+| What you see in the sidebar | Developer messages, the model's thinking, and about 24 buttons. | Plain progress lines ("Writing to O1:R6...") and a few buttons. |
+| Memory | One shared memory file that carried a preference from one document into others. | Off. Chat history stays with each document. |
+
+### What stays the same
+
+The tools that change the document (cells, formulas, charts, styles, tables, tracked changes) are
+WriterAgent's, the extension keeps WriterAgent's internal ID so it installs over an existing
+WriterAgent, and WriterAgent's GPLv3 licence applies (see [Licence](#licence)). The exact list of
+changes is in [docs/technical-changes.md](docs/technical-changes.md).
 
 ---
 
 ## Features
 
-What Libre Thinker offers today. "Tested" means it passed the automatic end-to-end checks described in
-[Tested behaviour](#tested-behaviour) and [BENCHMARK.md](BENCHMARK.md).
+What Libre Thinker Agent offers today. Typical requests: "Summarise this sheet for management", "Add a VAT column", "Fix the spelling in this memo", "Turn these notes into meeting minutes". Ready-made test files are in [`samples/`](samples/). "Tested" means it passed the automatic end-to-end checks described in
+[Tested behaviour](docs/tested-behaviour.md) and [BENCHMARK.md](BENCHMARK.md).
 
 ### Calc
 
@@ -84,47 +117,39 @@ What Libre Thinker offers today. "Tested" means it passed the automatic end-to-e
 - Request metadata only is stored; prompts and document text never are.
 - Plain-language progress lines in the sidebar ("Writing to O1:R6...") instead of tool names.
 
-### Not offered yet
-
-- Answers that draw on other open or nearby files (the engine has a mode for it; not enabled or tested).
-- Per-PC spending limits or rate limits, and TLS built into the gateway (use a reverse proxy).
-- Running the model on your own hardware has been compared in [BENCHMARK.md](BENCHMARK.md) but is
-  not set up or tested end to end.
-- Automatic PC enrolment and updates.
-
 ---
 
 ## How it works
 
-```text
-   Admin browser                Gateway (this repo)                 AI provider
-        │                             │                     (OpenRouter / Mistral)
-        │  register a PC              │                                │
-        ├────────────────────────────►│                                │
-        │  ◄──── device token ────────┤                                │
-        │                        ┌────┴─────┐                          │
-        │                        │ SQLite   │  devices + request       │
-        │                        │          │  metadata only           │
-        │                        └────┬─────┘                          │
-   Office PC                          │                                │
-   LibreOffice + LibreThinker.oxt       │                                │
-        │  POST /v1/chat/completions  │                                │
-        │  Authorization: Bearer lt_… │  picks provider by model id,   │
-        ├────────────────────────────►│  adds that provider's key      │
-        │                             ├───────────────────────────────►│
-        │  ◄────── streamed reply ────┤◄───────────────────────────────┤
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin
+    participant PC as Office PC<br/>(LibreOffice + extension)
+    participant GW as Gateway<br/>(Docker)
+    participant DB as SQLite
+    participant AI as AI provider<br/>(OpenRouter or Mistral)
+
+    rect rgb(240, 240, 240)
+    Note over Admin,PC: One-time setup per PC
+    Admin->>GW: Register the PC in the dashboard
+    GW->>DB: Store the token (hashed)
+    GW-->>Admin: Device token, shown once
+    Admin->>PC: Install LibreThinkerAgent.oxt, paste the token
+    end
+
+    Note over PC,AI: Every request from the sidebar
+    PC->>GW: POST /v1/chat/completions with the device token
+    GW->>DB: Is the token valid? Is the model allowed for this PC?
+    Note right of GW: Model id picks the provider.<br/>vendor/model goes to OpenRouter,<br/>a bare id goes to Mistral.
+    GW->>AI: Same request, with the provider's key added
+    AI-->>GW: Streamed reply
+    GW-->>PC: Streamed reply
+    GW->>DB: Log metadata only (no prompts, no document text)
 ```
 
-1. The admin starts the gateway in Docker and registers each office PC in the dashboard, receiving
-   a device token that is shown once.
-2. The PC installs `LibreThinker.oxt` (served by the gateway) and stores its token, either through a
-   menu item in LibreOffice or a one-line setup script.
-3. When an employee uses the Libre Thinker sidebar, the extension sends requests to the gateway with
-   its device token.
-4. The gateway validates the token, checks the model is allowed for that PC, chooses the provider
-   from the model id (`vendor/model` → OpenRouter, bare ids → Mistral), attaches that provider's
-   key, forwards the request (retrying brief network failures), and streams the answer back.
-5. Request metadata is written to SQLite. Prompts and document text are not stored.
+Only the gateway ever holds the provider key. It retries brief network failures and never stores
+prompts or document text.
 
 WriterAgent reads its settings from `writeragent.json` in the LibreOffice profile and re-reads it
 within seconds of a change, so central changes apply without restarting LibreOffice.
@@ -134,35 +159,6 @@ within seconds of a change, so central changes apply without restarting LibreOff
 The key would then live in every employee's home directory in plain text, be copied into backups,
 and be impossible to revoke per person. A gateway keeps the key in one place, lets you revoke a
 single PC, and lets you change model or provider centrally.
-
----
-
-## What employees can do
-
-Open the **Libre Thinker** panel in LibreOffice's right-hand sidebar and type a request.
-
-**In Calc**, for example:
-
-- "Give me a short summary of this sales register for management."
-- "What is the total outstanding amount from unpaid invoices, and which customer owes us the most?"
-- "Add a VAT column (15% of Amount) and a total row."
-- "Sort the data by Amount, highest first." · "Highlight all unpaid invoices in light red."
-- "Make the header bold, format Amount with thousands separators, and freeze the header row."
-- "Get the Rajshahi region's branches and plot the amounts by category."
-
-**In Writer**, for example:
-
-- "Summarise this report." · "Who is responsible for the hatchery project, and what is the deadline?"
-- "Fix all spelling and grammar mistakes." · "Rewrite this paragraph to sound more formal."
-- "Turn these notes into meeting minutes with an action items table."
-- "Write a formal letter to the supplier based on these points."
-- "Translate this report into Bangla." · "Format the section titles as proper headings."
-
-Questions are answered in the sidebar without touching the document. Changes are made with live
-formulas (Calc) and the document's own styles (Writer). Progress shows as plain lines such as
-"• Writing to O1:R6…" and "• Creating the chart…". Each document keeps its own chat history.
-
-Ready-made test files are in [`samples/`](samples/).
 
 ---
 
@@ -176,40 +172,9 @@ Ready-made test files are in [`samples/`](samples/).
 | Office PC tooling | Nothing for the token-entry route; `bash` and `curl` for `setup.sh`; Python 3.8+ only for `provision_pc.py` |
 | AI provider | An [OpenRouter](https://openrouter.ai) key with credit, and/or a Mistral API key |
 
-### LibreOffice 24.8 is mandatory
-
-WriterAgent declares `LibreOffice-minimal-version 24.8`. On an older version, for example
-**24.2, the default on Ubuntu 24.04 LTS**, installation fails with:
-
-```text
-ERROR: Exception occurred: unsatisfied dependencies at ./desktop/source/deployment/registry/package/dp_package.cxx:614
-ERROR: unopkg failed.
-```
-
-Check each PC with `libreoffice --version`. On Ubuntu 24.04, upgrade through the LibreOffice PPA:
-
-```bash
-sudo add-apt-repository ppa:libreoffice/ppa
-sudo apt update
-sudo apt install libreoffice
-```
-
-Do not patch the package to lower the version requirement.
-
-### Conda or pyenv on the office PC
-
-LibreOffice runs Python extensions with its own Python, found through `python3` on `PATH`. An
-Anaconda/Miniconda (or pyenv) environment on `PATH` breaks that: `unopkg` dies with
-`std::bad_alloc` and the extension never installs, even though LibreOffice itself works.
-
-The generated `setup.sh` handles this automatically. For manual installs, use a clean `PATH`:
-
-```bash
-PATH=/usr/bin:/bin unopkg add -f LibreThinker.oxt
-```
-
-Start LibreOffice from the application menu rather than a conda-activated terminal. If conda is
-only used interactively, `conda config --set auto_activate_base false` avoids the problem entirely.
+LibreOffice 24.8 is mandatory: on an older version (for example 24.2, the default on Ubuntu 24.04)
+the install fails with `unsatisfied dependencies`. A conda or pyenv Python on `PATH` also breaks
+the install (`std::bad_alloc`). Fixes are in [docs/office-pc-setup.md](docs/office-pc-setup.md#libreoffice-version-and-python-on-the-pc).
 
 ---
 
@@ -262,108 +227,24 @@ Open `http://<gateway-ip>:8080/`, paste the admin token, enter a PC name, and cl
 
 ### 4. Set up the PC
 
-See [Setting up office PCs](#setting-up-office-pcs). The quickest route: install `LibreThinker.oxt`,
-restart LibreOffice, and paste the token under **Tools → Libre Thinker: Enter access token…**.
+See [Setting up office PCs](#setting-up-office-pcs). The quickest route: install `LibreThinkerAgent.oxt`,
+restart LibreOffice, and paste the token under **Tools → Libre Thinker Agent: Enter access token…**.
 
 ---
 
 ## Setting up office PCs
 
-Close LibreOffice on the PC first. Every route ends in the same state: the extension installed and
-`writeragent.json` pointing at the gateway with that PC's token.
+Close LibreOffice on the PC first. The simplest route needs no command line:
 
-### Option A: install one file and paste a token (no command line)
+1. Download `LibreThinkerAgent.oxt` from `http://<gateway-ip>:8080/setup/LibreThinkerAgent.oxt`
+   (the dashboard links it under each new token). It is identical for every PC and contains no secret.
+2. Double-click it (or **Tools → Extension Manager → Add**) and restart LibreOffice.
+3. Open **Tools → Libre Thinker Agent: Enter access token…** and paste the PC's token. The extension
+   checks it with the gateway and configures itself.
 
-The gateway serves one extension file, identical for every PC and containing no secret:
-`http://<gateway-ip>:8080/setup/LibreThinker.oxt`. The dashboard links it under each new token.
-
-1. Double-click `LibreThinker.oxt` (or **Tools → Extension Manager → Add**) and restart LibreOffice.
-2. Open **Tools → Libre Thinker: Enter access token…** and paste the PC's token.
-
-The extension checks the token with the gateway (a wrong or revoked token is rejected with a
-message), picks the default model from those the PC may use, and writes `writeragent.json`.
-
-For scripted rollouts the same action accepts the token directly
-(`org.librethinker.config:SetToken` with a `Token` property), skipping the dialog.
-
-### Option B: one command (Linux)
-
-The dashboard shows this command next to each new token:
-
-```bash
-curl -fsSL -H "Authorization: Bearer lt_..." http://<gateway-ip>:8080/setup.sh | bash
-```
-
-The script is generated for that device. It downloads `LibreThinker.oxt`, installs it with `unopkg`
-(clearing conda from `PATH` and a stale lock if needed), and writes `writeragent.json`, merging with
-`jq` when available and otherwise backing up and replacing the file. It writes the gateway's
-default model; add `?model=<id>` to the URL to choose another. Set `LIBRETHINKER_PUBLIC_URL` if PCs
-reach the gateway under a different address than the one in the request.
-
-### Option C: `provision_pc.py`
-
-```text
-python3 provision/provision_pc.py --gateway URL --token TOKEN [options]
-```
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `--gateway` | *required* | Gateway base URL. A trailing `/v1` is stripped automatically. |
-| `--token` | *required* | Device token from the dashboard. |
-| `--model` | `deepseek/deepseek-v4.1-flash-1017` | Model written into the extension config. |
-| `--user` | current user | Linux user whose LibreOffice profile to configure. |
-| `--profile` | auto-detected | Override the profile path, e.g. for Flatpak installs. |
-| `--install-extension` | off | Also run `unopkg add vendor/WriterAgent.oxt`. This is the **unpatched** package; prefer installing the gateway's `LibreThinker.oxt`. |
-| `--dry-run` | off | Print the resulting config without writing anything. |
-
-The script finds the newest profile under `~/.config/libreoffice/*/user`, preserves unrelated
-settings in an existing `writeragent.json`, sets `endpoint`, `text_model`, `model` and the token,
-backs up the old file to `writeragent.json.bak.<timestamp>`, and writes it with `0600` permissions.
-
-### Rolling out to many PCs
-
-Tokens are per PC, so register the PCs (dashboard or admin API), collect the tokens, and have your
-configuration-management tool or login script run Option B or C with the matching token.
-`unopkg add` installs into the **current user's** profile; on shared PCs, set up each account.
-
-### Flatpak LibreOffice
-
-```bash
-flatpak run --command=unopkg org.libreoffice.LibreOffice add LibreThinker.oxt
-
-python3 provision/provision_pc.py \
-  --gateway http://<gateway-ip>:8080 \
-  --token lt_... \
-  --profile ~/.var/app/org.libreoffice.LibreOffice/config/libreoffice/4/user
-```
-
-### Updating PCs
-
-When the gateway is rebuilt with a new `LibreThinker.oxt`, reinstall it on each PC with LibreOffice
-closed (`unopkg add -f LibreThinker.oxt`, or Option A again). The token and settings are kept.
-
-### Upgrading a gateway that ran under an earlier name
-
-Earlier builds were called CellScribe (and briefly Libre Agent). On an existing server:
-
-1. **Settings.** Rename `CELLSCRIBE_*` to `LIBRETHINKER_*` in `gateway/.env`. Old names are still read
-   as a fallback, so this can wait.
-2. **Data.** The compose volume is now `gateway_librethinker-data` (was `gateway_cellscribe-data`).
-   Copy the data across once, with the old container stopped:
-
-   ```bash
-   docker rm -f cellscribe-gateway
-   cd gateway && docker compose create --build
-   docker run --rm -v gateway_cellscribe-data:/old:ro -v gateway_librethinker-data:/new \
-     python:3.12-slim sh -c 'cp -a /old/. /new/'
-   docker compose up -d
-   ```
-
-   The gateway renames a copied `cellscribe.db` to `librethinker.db` on start, so devices, tokens and
-   request history carry over. Keep the old volume until you have checked the dashboard.
-3. **PCs.** Reinstall `LibreThinker.oxt` on each PC. Existing device tokens (`cs_…`) keep working;
-   new tokens start with `lt_`. Setup scripts generated before the rename point at an old download
-   URL, so generate a new one from the dashboard.
+Other routes (one-command `setup.sh`, `provision_pc.py`, Flatpak, many PCs, updating PCs, and
+upgrading a gateway that ran under an earlier name) are in
+[docs/office-pc-setup.md](docs/office-pc-setup.md).
 
 ---
 
@@ -377,7 +258,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://<gateway-ip>:8080/admin/devices 
 ```
 
 On an office PC, open a file from [`samples/`](samples/) (for example `sales_register.csv` in Calc),
-open the **Libre Thinker** panel and ask "Give me a short summary of this sheet". The request should
+open the **Libre Thinker Agent** panel and ask "Give me a short summary of this sheet". The request should
 appear in the dashboard's request log within seconds. If it does not, the PC is not using the
 gateway; see [Troubleshooting](#troubleshooting).
 
@@ -399,9 +280,9 @@ All settings are environment variables in `gateway/.env`.
 | `LIBRETHINKER_RETRIES` | no | `2` | Retries for transient upstream failures (dropped connection, 429/502/503/504) before an error reaches the PC. |
 | `LIBRETHINKER_PRICES` | no | OpenRouter's price list | JSON of USD per million tokens for models without a public price (Mistral direct), e.g. `{"mistral-large-latest":{"in":2,"out":6,"cache_read":0.2}}`. Used for cost when the provider reports none. |
 | `LIBRETHINKER_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
-| `LIBRETHINKER_PUBLIC_URL` | no | from request | Gateway URL embedded in `setup.sh` and `LibreThinker.oxt`. |
+| `LIBRETHINKER_PUBLIC_URL` | no | from request | Gateway URL embedded in `setup.sh` and `LibreThinkerAgent.oxt`. |
 | `LIBRETHINKER_DB` | no | `/data/librethinker.db` | SQLite path inside the container. |
-| `LIBRETHINKER_OXT` | no | `/app/vendor/WriterAgent.oxt` | Base extension package the gateway patches into `LibreThinker.oxt`. |
+| `LIBRETHINKER_OXT` | no | `/app/vendor/WriterAgent.oxt` | Base extension package the gateway patches into `LibreThinkerAgent.oxt`. |
 
 Data persists in the compose volume (it appears as `gateway_librethinker-data`), so restarts keep
 devices and logs. `docker compose down -v` deletes everything, including all tokens.
@@ -427,121 +308,6 @@ A PC registered with every model ticked stores "all" and follows later changes t
 **Apply ticked models** on its row (or `POST /admin/devices/{id}/models` with `{"models": []}` for
 all). The sidebar's model picker is hidden, so employees cannot switch to a weaker model by
 accident.
-
----
-
-## What Libre Thinker changes in WriterAgent
-
-`vendor/WriterAgent.oxt` is kept byte-for-byte as pinned. When a PC downloads `LibreThinker.oxt`, the
-gateway builds it from that package: it adds the token-entry menu item (`gateway/packager.py`),
-removes WriterAgent's update feed so the Extension Manager cannot swap the build for upstream, and
-applies the exact search-and-replace patches in `gateway/patches.py`. Each patch must match exactly
-once, so a WriterAgent upgrade that changes the code underneath fails the build instead of shipping
-a half-patched extension. The extension keeps WriterAgent's identifier, so it installs over an
-existing WriterAgent.
-
-| Area | WriterAgent default | Libre Thinker | Why |
-| --- | --- | --- | --- |
-| Calc: what the model sees | sheet size and row 1 only | the sheet's values as CSV, a column map (letter → header), an exact per-column profile (sums, min/max, counts, date ranges), group totals by category and month, and other sheets when they fit; total rows are excluded from figures | The model never saw the data, so summaries were invented or built from 80-cell reads. Models also miscount wide rows and mis-add long columns. |
-| Calc prompt | read with tools, compute with `=PY`, "colorful spreadsheets" | answer questions from the data in one reply; write whole tables in one call with ordinary formulas; requested work before styling | `=PY` needs Python packages office PCs lack; decoration used up to 9 steps per task and starved the request. |
-| `sort_range` | silently did nothing | sorts | pyuno passed the sort fields as an untyped sequence, which Calc ignores. |
-| `set_style` | no number formats, no freeze panes | `number_format` (e.g. `#,##0`) and `freeze_at` (e.g. `A2`) | Routine office formatting the model could not do at all. |
-| Calc tool arguments | a list sent as a JSON string, or one value per listed cell, was rejected | accepted | Each rejection cost a full step. |
-| `read_cell_range` limit | 80 cells | 400 cells | Fewer steps when the model does read. |
-| Writer: what the model sees | text read by cursor steps, which undercount tables | full text whenever the cursor read comes up short (documents without tracked changes) | Everything after a table was silently missing. Models then "repaired" correct meeting minutes by deleting sections they could not see (0/4 → 4/4 after the fix). |
-| Writer prompt | "thoughtful use of color", no notion of a step budget | requested work first; one write per new part; whole-document translations and rewrites in one write; named styles only; no placeholders; check every fact is kept | Minutes took 20 steps and 5 minutes of colours and custom styles; translation went paragraph by paragraph and would stop half-way on long documents. |
-| Writer full rewrites | no check | the tool reports passages a rewrite dropped (fuzzy match; translations and restructures are not flagged) | A safety net so a rewrite cannot silently lose content. |
-| Context size | 8,000 characters | 60,000 characters (~15k tokens) | Lets the model see a whole working document. |
-| Steps per request | 15 | 20 | The sidebar runs one tool per model call; a table plus a chart needs about 10. |
-| Memory | one global `USER.md` added to every prompt | off | A preference saved in one document leaked into unrelated ones. Chat history stays per document. |
-| Sidebar | raw `[Running tool: …]` lines, model reasoning, ~24 controls, "WriterAgent" | plain progress lines, no reasoning text, Ask/Send/Stop/Clear plus Settings and menu, Libre Thinker branding and greeting | Office users saw developer output. Model, mode and image pickers, Python, LaTeX, search and voice are hidden, not removed. |
-
----
-
-## Tested behaviour
-
-Tested on 16 November 2026 with `deepseek/deepseek-v4.1-flash-1017` through the gateway. Each task
-ran through the real WriterAgent agent (same prompt, tools and one-tool-per-call loop as the
-sidebar) in LibreOffice 26.2, on a fresh copy of the file, and the resulting document was checked
-automatically against figures computed from the source data. Several tasks were also run by hand in
-the sidebar.
-
-**Calc** ([`samples/sales_register.csv`](samples/sales_register.csv): 150 invoices, Jan–Mar 2026),
-12 of 12 correct (10 by the automatic checks; the other two were confirmed by hand, see below):
-
-| Task | Steps | Time |
-| --- | --- | --- |
-| Management summary; outstanding dues; filtered count; revenue per month (questions) | 1 each | 2–9 s |
-| VAT and "Total incl. VAT" columns for 150 rows | 6 | 15 s |
-| Totals row | 2 | 5 s |
-| New "Region Summary" sheet with live formulas | 4 | 13 s |
-| Sort by amount, rows kept intact | 2 | 10 s |
-| Highlight the 26 unpaid invoices | 2 | 30 s |
-| Bold header, `#,##0` amounts, frozen header row | 4 | 17 s |
-| Bar chart of revenue by region | 3 | 17 s |
-| A region's branches and amounts by category, with chart | 3 | 24 s |
-
-The two hand-checked results: the management summary gave unpaid invoices as an amount
-(৳2,383,004) where the check looked for the count, and the region breakdown built branch totals
-plus a category table where the check expected a branch × category grid. All figures were exact.
-
-**Writer** ([`samples/`](samples/) `.docx` files), 12 of 12 correct:
-
-| Task | Steps | Time |
-| --- | --- | --- |
-| Summarise a report; answer a question about it | 1 | 2–4 s |
-| Notes → meeting minutes with action table | 2 | 7 s |
-| Letter from bullet points; formal rewrite of one paragraph | 2 | 4–13 s |
-| Proofread a memo (9 planted errors) | 7 | 30 s |
-| Translate a memo / a 2-page report with a table into Bangla | 3 | 10–21 s |
-| Add a risk table in the right section; apply heading styles | 6–8 | 14–32 s |
-| Find and replace across the document | 3 | 8 s |
-| Add an executive summary | 14 | 45 s |
-
-Typical cost: under one US cent per task (all 24 tasks together: about $0.20). Questions are answered without changing the document.
-
-For how self-hostable open-weight models compare on these same tasks, see [BENCHMARK.md](BENCHMARK.md).
-
----
-
-## Gateway HTTP API
-
-Device endpoints require `Authorization: Bearer <device-token>`; admin endpoints require
-`X-Admin-Token: <admin-token>`.
-
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| `GET` | `/healthz` | none | Liveness probe. |
-| `GET` | `/`, `/requests`, `/revoked` | none | Dashboard, full request log and revoked-devices pages (their data calls need the admin token). |
-| `GET` | `/setup/LibreThinker.oxt` | none | The patched extension with the gateway URL embedded; contains no secret. |
-| `GET` | `/setup.sh` | device | Generated installer and config script for that device. |
-| `GET` | `/v1/models` | device | Models this device may use, OpenAI-shaped. |
-| `POST` | `/v1/chat/completions` | device | Proxied to OpenRouter or Mistral by model id; supports `stream: true`. |
-| `GET` | `/admin/devices?status=active\|revoked\|all` | admin | List devices (no token hashes) with request count and spend. |
-| `POST` | `/admin/devices` | admin | Create a device; returns its token once. |
-| `POST` | `/admin/devices/{id}/models` | admin | Replace a device's model allow-list; `[]` means all models. |
-| `POST` | `/admin/devices/{id}/revoke` | admin | Revoke immediately. |
-| `GET` | `/admin/logs?limit=100` | admin | Request metadata, newest first. Filters: `device_id`, `model`, `result=ok\|failed`, `after_id`, `before_id`. |
-| `GET` | `/admin/stats?range=7d&tz=0` | admin | Spend, tokens, cache hit rate and latency totals, per model, PC and day. `range`: `today`, `24h`, `7d`, `30d`, `all`; `tz` is minutes from UTC. |
-| `GET` | `/admin/models` | admin | Models the gateway can serve. |
-
-Create a device without the dashboard:
-
-```bash
-curl -s -X POST http://<gateway-ip>:8080/admin/devices \
-  -H "X-Admin-Token: $ADMIN" \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"acc-pc-01","models":[]}'
-```
-
-The response contains the plaintext `token`. The gateway keeps only its SHA-256 hash and cannot
-show it again.
-
-Errors use OpenAI's shape so LibreOffice shows a readable message, for example:
-
-```json
-{"error": {"message": "Upstream error (401): API key expired.", "type": "upstream_error"}}
-```
 
 ---
 
@@ -607,16 +373,16 @@ firewall.
 | Symptom | Cause and fix |
 | --- | --- |
 | `unsatisfied dependencies … dp_package.cxx:614` on install | LibreOffice older than 24.8. Upgrade (see [Requirements](#requirements)). |
-| `std::bad_alloc` on install | A conda or pyenv Python on `PATH`. Use `setup.sh`, or `PATH=/usr/bin:/bin unopkg add -f LibreThinker.oxt`. |
+| `std::bad_alloc` on install | A conda or pyenv Python on `PATH`. Use `setup.sh`, or `PATH=/usr/bin:/bin unopkg add -f LibreThinkerAgent.oxt`. |
 | `unopkg add` fails while LibreOffice is open | Quit LibreOffice fully (`pkill -f soffice.bin`) and retry. |
 | Extension installed, but the sidebar does nothing | LibreOffice was started from a conda-activated terminal. Start it from the application menu. |
-| No requests from a PC in the dashboard log | The PC is not using the gateway: its `endpoint` in `writeragent.json` points straight at a provider. Run **Tools → Libre Thinker: Enter access token…** again. |
+| No requests from a PC in the dashboard log | The PC is not using the gateway: its `endpoint` in `writeragent.json` points straight at a provider. Run **Tools → Libre Thinker Agent: Enter access token…** again. |
 | "Test connection" succeeds but chatting fails with `API key expired` | Same cause: the PC talks to OpenRouter directly with an old key. OpenRouter lists models without checking the key, so the test passes. Re-enter the token as above. |
 | Every request fails with `Upstream error (401): API key expired` | The gateway's provider key expired. Put a new key in `gateway/.env` and run `docker compose up -d --force-recreate`. |
 | `Upstream error (402)` or a credit message | The OpenRouter account is out of credit or over its key limit. Top up or raise the limit. |
 | `HTTP 401 … Unknown or revoked device token` | Wrong or revoked token. Issue a new one and re-enter it. |
 | `HTTP 403 … not permitted for this device` | The model is not in that PC's allow-list. Use **Apply ticked models** in the dashboard. |
-| The Libre Thinker panel opens very narrow | Drag its left edge to widen it; LibreOffice remembers the width. |
+| The Libre Thinker Agent panel opens very narrow | Drag its left edge to widen it; LibreOffice remembers the width. |
 | Writer replies in the sidebar but the document is unchanged | The model answered instead of editing. Use the default model or `mistral-large-latest`, not `mistral-small-latest`. |
 | A file opens with a "locked" warning | LibreOffice was killed while the file was open and left `.~lock.<name>#` next to it. With LibreOffice closed, delete that file. |
 | Worked yesterday, now connection refused | The gateway's LAN address changed. Give it a static lease or a DNS name. |
@@ -650,64 +416,9 @@ WriterAgent's own log on a PC is `writeragent_debug.log` in the profile's `user/
   model then fixes the paragraphs one by one (the 45 s executive summary above). Results are correct.
 - **No device agent.** Setup is a script or a menu item; nothing enrolls PCs, pushes updates or
   ships logs automatically.
-
-Planned next: a small agent that enrolls machines and ships `writeragent_debug.log`, and offering the
-WriterAgent fixes (sort, Writer snapshot) upstream.
-
----
-
-## Repository layout
-
-```text
-.
-├── gateway/
-│   ├── app.py               FastAPI proxy: auth, provider routing, retries, admin routes
-│   ├── patches.py           Exact patches applied to WriterAgent when building LibreThinker.oxt
-│   ├── packager.py          Builds LibreThinker.oxt (token-entry menu item + patches)
-│   ├── store.py             SQLite device registry and request log
-│   ├── admin.html           Admin dashboard (live stats, costs, requests)
-│   ├── requests.html        Full request log with filters and paging
-│   ├── revoked.html         Revoked-devices archive page
-│   ├── admin.css, admin.js  Styles and helpers shared by both pages
-│   ├── brand/               Libre Thinker logo (SVG source and PNG/JPG sizes used in the extension)
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   ├── requirements.txt
-│   └── .env.example         Template; copy to gateway/.env and fill in
-├── provision/
-│   └── provision_pc.py      Writes writeragent.json for a Linux PC
-├── samples/                 Test files: a sales register (CSV) and five office .docx documents
-├── vendor/
-│   └── WriterAgent.oxt      Pinned upstream extension package (unmodified)
-└── README.md
-```
-
-### Pinned extension package
-
-`vendor/WriterAgent.oxt`
-
-- Release tag 0.8.84 (the package reports 0.8.85)
-- SHA-256 `445e495556b1e67e20b5777eb96c7b6e1cb082a5bd871b4f9f6b46f5f99bf73c`
-- Tested on LibreOffice 24.8.7 (Ubuntu 24.10) and LibreOffice 26.2
-
-The upstream release asset was replaced on 2026-11-01, after its 2026-09-19 release date, so keep
-this copy. To upgrade, replace the file, rebuild the gateway, and confirm every patch in
-`gateway/patches.py` still applies (the build fails loudly if one does not).
-
----
-
-## Upstream extension notes
-
-Libre Thinker builds on [WriterAgent](https://github.com/KeithCu/writeragent) rather than its own
-extension.
-
-- Licence: GPL-3.0-or-later. Distributing `LibreThinker.oxt` outside your organisation means
-  distributing a modified WriterAgent, so its source (this repository) must be available too.
-- The patches are deliberately small and isolated in `gateway/patches.py`. The bug fixes (sort, the
-  Writer snapshot after tables) are good candidates to contribute upstream.
-- **Why not the existing third-party "LibreThinker" extension** (librethinker.com, an unrelated project
-  that shares this name): it supports Writer only, and requests made with your own API key send the
-  key and document text through `api.librethinker.com`.
+- **Other open files.** Answers that draw on other open or nearby files are not enabled or tested.
+- **Local model.** Running the model on your own hardware is compared in [BENCHMARK.md](BENCHMARK.md)
+  but is not set up or tested end to end.
 
 Open items before wider rollout:
 
@@ -716,12 +427,20 @@ Open items before wider rollout:
 - Confirm company policy allows sending document content to the chosen provider.
 - The extension can download extra tools such as the Harper grammar checker from GitHub; not tested.
 
+Planned next: a small agent that enrolls machines and ships `writeragent_debug.log`, and offering the
+WriterAgent fixes (sort, Writer snapshot) upstream.
+
 ---
 
 ## Licence
 
 GPL-3.0-or-later. The full text is in [LICENSE](LICENSE).
 
-The bundled WriterAgent extension is also GPL-3.0-or-later, and Libre Thinker's own files carry
+The bundled WriterAgent extension is also GPL-3.0-or-later, and Libre Thinker Agent's own files carry
 matching `SPDX-License-Identifier: GPL-3.0-or-later` headers. Running it inside your organisation
 does not trigger the source-sharing rules; distributing it outside does.
+
+The patches are small and live in `gateway/patches.py`. **Why not the existing third-party
+"LibreThinker" extension** (librethinker.com, an unrelated project with a similar name): it supports
+Writer only, and requests made with your own API key send the key and document text through
+`api.librethinker.com`.

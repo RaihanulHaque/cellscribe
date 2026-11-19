@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Libre Thinker PC provisioning
+# Libre Thinker Agent PC provisioning
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Point a Linux LibreOffice profile at the Libre Thinker gateway.
+"""Point a Linux LibreOffice profile at the Libre Thinker Agent gateway.
 
 Writes the gateway endpoint, the chosen model, and the device token into
 WriterAgent's own config file. The Mistral key is never written to the PC.

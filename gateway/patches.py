@@ -1,6 +1,6 @@
-# Libre Thinker - build-time patches applied to the vendored WriterAgent package
+# Libre Thinker Agent - build-time patches applied to the vendored WriterAgent package
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Small, exact patches to WriterAgent, applied while the gateway builds LibreThinker.oxt.
+"""Small, exact patches to WriterAgent, applied while the gateway builds LibreThinkerAgent.oxt.
 
 vendor/WriterAgent.oxt itself is never modified. Each patch is an exact
 search/replace that must match once; if a WriterAgent upgrade changes the
@@ -33,7 +33,7 @@ MAX_TOOL_ROUNDS = 20
 
 _CALC_SHEET_CSV = '''
 
-# --- Libre Thinker: include the sheet's values in chat context -----------------
+# --- Libre Thinker Agent: include the sheet's values in chat context -----------------
 # WriterAgent only sent row 1 as "headers", so the model never saw the data
 # and either guessed or read it 80 cells at a time.
 _LT_CSV_MAX_CELLS = 30000
@@ -266,7 +266,7 @@ def _lt_sheet_csv(bridge: Any, sheet_name: str, budget: int) -> str:
 
 
 # Plain-language progress for the sidebar, in place of "[Running tool: x...]".
-_FRIENDLY_PROGRESS = '''# --- Libre Thinker: plain-language progress lines -------------------------------
+_FRIENDLY_PROGRESS = '''# --- Libre Thinker Agent: plain-language progress lines -------------------------------
 _LT_TOOL_WORDS = {
     "write_formula_range": "Writing to {where}",
     "insert_cell_html": "Writing to {where}",
@@ -380,7 +380,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "plugin/framework/constants.py": [
         (
             "CHAT_DOCUMENT_CONTEXT_MAX_CHARS = 8000\n",
-            f"CHAT_DOCUMENT_CONTEXT_MAX_CHARS = {CONTEXT_CHARS}  # Libre Thinker: WriterAgent ships 8000\n",
+            f"CHAT_DOCUMENT_CONTEXT_MAX_CHARS = {CONTEXT_CHARS}  # Libre Thinker Agent: WriterAgent ships 8000\n",
         ),
     ],
     # --- Calc: send the sheet's values ---------------------------------------
@@ -405,7 +405,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "        except Exception as exc:\n"
             "            if is_real_disposal(exc):\n"
             "                raise DocumentDisposedError(\"Calc document disposed during data read\", object_type=\"calc\") from exc\n"
-            "            log.warning(\"Libre Thinker sheet CSV failed: %s\", exc)\n\n"
+            "            log.warning(\"Libre Thinker Agent sheet CSV failed: %s\", exc)\n\n"
             "        # Add selection context if available\n",
         ),
     ],
@@ -424,7 +424,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "        return []\n"
             "    if isinstance(raw, str):\n"
             "        text = raw.strip()\n"
-            "        if text.startswith(\"[\") and text.endswith(\"]\"):  # Libre Thinker: JSON list sent as a string\n"
+            "        if text.startswith(\"[\") and text.endswith(\"]\"):  # Libre Thinker Agent: JSON list sent as a string\n"
             "            import json\n"
             "            try:\n"
             "                parsed = json.loads(text)\n"
@@ -433,7 +433,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            if isinstance(parsed, list) and parsed and all(isinstance(p, str) for p in parsed):\n"
             "                return parsed\n"
             "        return [raw]\n"
-            "    if isinstance(raw, (list, tuple)):  # Libre Thinker: ['[\"O1:P5\"]'] after schema coercion\n"
+            "    if isinstance(raw, (list, tuple)):  # Libre Thinker Agent: ['[\"O1:P5\"]'] after schema coercion\n"
             "        flat: list[Any] = []\n"
             "        for item in raw:\n"
             "            flat.extend(_range_args(item) if isinstance(item, str) and item.strip().startswith(\"[\") else [item])\n"
@@ -456,7 +456,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             '    scripting_only_parameters: frozenset[str] = frozenset({"number_format"})\n',
-            "    scripting_only_parameters: frozenset[str] = frozenset()  # Libre Thinker: number_format exposed\n",
+            "    scripting_only_parameters: frozenset[str] = frozenset()  # Libre Thinker Agent: number_format exposed\n",
         ),
         (
             "        if len(rn) == 0:\n"
@@ -466,7 +466,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '            return self._tool_error("range is required")\n\n'
             "        froze = None\n"
             '        freeze_at = kwargs.get("freeze_at")\n'
-            "        if isinstance(freeze_at, str) and freeze_at.strip():  # Libre Thinker: freeze panes\n"
+            "        if isinstance(freeze_at, str) and freeze_at.strip():  # Libre Thinker Agent: freeze panes\n"
             "            import re as _re\n"
             '            m = _re.fullmatch(r"(?:.*\\.)?\\$?([A-Za-z]{1,3})\\$?(\\d+)", freeze_at.strip())\n'
             "            if not m:\n"
@@ -497,7 +497,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            and len(per_cell) == len(rn)\n"
             "            and all(not isinstance(v, (list, tuple, dict, bool)) and v is not None for v in per_cell)\n"
             "            and all(_a1_range_shape(r) == (1, 1, 1) for r in rn)\n"
-            "        ):  # Libre Thinker: one value per single-cell range\n"
+            "        ):  # Libre Thinker Agent: one value per single-cell range\n"
             "            values_iter = iter(str(v) for v in per_cell)\n"
             "            return _mutate_ranges(\n"
             "                self, ctx.doc, rn, \"WriterAgent: Write formulas\",\n"
@@ -508,7 +508,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             "_READ_CELL_RANGE_MAX_CELLS = 80\n",
-            f"_READ_CELL_RANGE_MAX_CELLS = {READ_RANGE_MAX_CELLS}  # Libre Thinker: WriterAgent ships 80\n",
+            f"_READ_CELL_RANGE_MAX_CELLS = {READ_RANGE_MAX_CELLS}  # Libre Thinker Agent: WriterAgent ships 80\n",
         ),
         (
             '    "Reductions that spill a small result: write =PY into one empty cell "\n'
@@ -525,7 +525,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         (
             '    name: str | None = "upsert_memory"\n',
             '    name: str | None = "upsert_memory"\n'
-            "    # Libre Thinker: off the sidebar tool list (mcp tier is excluded by default).\n",
+            "    # Libre Thinker Agent: off the sidebar tool list (mcp tier is excluded by default).\n",
         ),
         (
             "    uno_services: list[str] | None = None\n"
@@ -549,7 +549,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            excerpt = _text_helpers._read_writer_text_slice(model, 0, take)\n",
             "            take = min(doc_len, max_context)\n"
             "            excerpt = _text_helpers._read_writer_text_slice(model, 0, take)\n"
-            "            try:  # Libre Thinker: fall back to the full text when the cursor read came up short\n"
+            "            try:  # Libre Thinker Agent: fall back to the full text when the cursor read came up short\n"
             "                _lt_full = model.getText().getString()\n"
             "                _lt_redlines = model.getRedlines().createEnumeration().hasMoreElements()\n"
             "            except Exception:\n"
@@ -570,7 +570,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "            session = _open_session()\n"
             "            with session:\n",
             '        if target == "full_document":\n'
-            "            try:  # Libre Thinker: remember the text to detect dropped passages\n"
+            "            try:  # Libre Thinker Agent: remember the text to detect dropped passages\n"
             "                _lt_before = ctx.doc.getText().getString()\n"
             "            except Exception:\n"
             "                _lt_before = None\n"
@@ -608,7 +608,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "                if p.Name == \"SortFields\":\n"
             "                    p.Value = (sort_field,)\n",
             "                if p.Name == \"SortFields\":\n"
-            "                    import uno as _uno  # Libre Thinker: typed sequence, or Calc ignores it\n"
+            "                    import uno as _uno  # Libre Thinker Agent: typed sequence, or Calc ignores it\n"
             "                    p.Value = _uno.Any(\"[]com.sun.star.table.TableSortField\", (sort_field,))\n",
         ),
         (
@@ -643,11 +643,11 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             '        return _("AI: I can help you with formulas, data analysis, and colorful charts. Try me!")\n',
-            '        return _("Hi, I\'m Libre Thinker. Ask me to summarise this sheet, answer questions about it, add formulas, sort, format or make a chart.")\n',
+            '        return _("Hi, I\'m Libre Thinker Agent. Ask me to summarise this sheet, answer questions about it, add formulas, sort, format or make a chart.")\n',
         ),
         (
             '    return _("AI: I can edit or translate your document instantly with professional formatting and color. Try me!")\n',
-            '    return _("Hi, I\'m Libre Thinker. Ask me to summarise, rewrite, proofread, translate or format this document.")\n',
+            '    return _("Hi, I\'m Libre Thinker Agent. Ask me to summarise, rewrite, proofread, translate or format this document.")\n',
         ),
         (
             'MEMORY_GUIDANCE = """MEMORY:\n'
@@ -656,12 +656,12 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "- Never store credentials, tokens, or one-off document text.\n"
             "- Keep values short.\n"
             'Prioritize what reduces future user steering."""\n',
-            'MEMORY_GUIDANCE = ""  # Libre Thinker: no cross-document memory\n',
+            'MEMORY_GUIDANCE = ""  # Libre Thinker Agent: no cross-document memory\n',
         ),
         (
             '    """Read MemoryStore and return a fenced, capped user profile block, or empty string."""\n',
             '    """Read MemoryStore and return a fenced, capped user profile block, or empty string."""\n'
-            "    return \"\"  # Libre Thinker: memory must not carry between documents\n",
+            "    return \"\"  # Libre Thinker Agent: memory must not carry between documents\n",
         ),
         (
             "Python on sheet data: write_formula_range of =PY (that tool's description).\n",
@@ -699,7 +699,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             _FRIENDLY_PROGRESS
             + "def format_tool_running_ui(func_name: str, func_args: Mapping[str, Any]) -> tuple[str, str]:\n"
             '    """Status bar text and chat run-line when a tool starts executing."""\n'
-            "    _cs = _lt_progress(func_name, func_args)  # Libre Thinker: plain language\n"
+            "    _cs = _lt_progress(func_name, func_args)  # Libre Thinker Agent: plain language\n"
             '    return _cs, "\\u2022 " + _cs + "\\u2026\\n"\n',
         ),
         (
@@ -709,7 +709,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '    """Chat append body for a tool result (error or success); does not mutate *result_data*."""\n'
             "    # crosshair: off\n"
             "    note = _result_note(result_data)\n"
-            "    # Libre Thinker: successes are already announced by the progress line; a\n"
+            "    # Libre Thinker Agent: successes are already announced by the progress line; a\n"
             "    # failed step is retried by the model, so show one plain line, no JSON.\n"
             '    if result_data.get("status") == "error":\n'
             '        return "\\u2022 That step didn\'t work; trying another way\\u2026\\n"\n'
@@ -724,13 +724,13 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '            elif msg.get("tool_calls"):\n'
             '                text += "\\n%s [Thinking...]" % _("Assistant:")\n',
             '            elif msg.get("tool_calls"):\n'
-            "                pass  # Libre Thinker: no [Thinking...] rows\n",
+            "                pass  # Libre Thinker Agent: no [Thinking...] rows\n",
         ),
         (
             '            elif msg.get("tool_calls"):\n'
             '                items.append(("assistant", "[Thinking...]"))\n',
             '            elif msg.get("tool_calls"):\n'
-            "                pass  # Libre Thinker: no [Thinking...] rows\n",
+            "                pass  # Libre Thinker Agent: no [Thinking...] rows\n",
         ),
     ],
     "plugin/chatbot/panel.py": [
@@ -740,13 +740,13 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '    def _append_response(self, text: str, is_thinking: bool = False, role: str = "assistant") -> None:\n'
             '        """Project ``text`` onto the session, then draw that list.\n'
             "\n"
-            "        Libre Thinker: the model's private reasoning is not shown in the chat.\n",
+            "        Libre Thinker Agent: the model's private reasoning is not shown in the chat.\n",
         ),
         (
             "        from plugin.chatbot.tool_loop_actions import TurnController, current_turn\n\n"
             "        turn = current_turn(self)\n"
             "        session = self.session\n",
-            "        if is_thinking:  # Libre Thinker: hide [Thinking] ... /thinking blocks\n"
+            "        if is_thinking:  # Libre Thinker Agent: hide [Thinking] ... /thinking blocks\n"
             "            return\n"
             "        from plugin.chatbot.tool_loop_actions import TurnController, current_turn\n\n"
             "        turn = current_turn(self)\n"
@@ -756,7 +756,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "plugin/chatbot/panel_factory.py": [
         (
             "        header_buttons: list[tuple[str, Any, Any, Any, Any]] = [\n",
-            "        # Libre Thinker: office users get Ask/Send/Stop/Clear; developer tools\n"
+            "        # Libre Thinker Agent: office users get Ask/Send/Stop/Clear; developer tools\n"
             "        # (Python, LaTeX, file search, voice, mode/model/image pickers) are hidden.\n"
             "        for _lt_name in (\"btn_python\", \"btn_latex\", \"btn_search\", \"chk_voice\", \"chat_mode_selector\",\n"
             "                         \"model_label\", \"model_selector\", \"reasoning_effort_selector\", \"image_model_selector\",\n"
@@ -776,7 +776,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '        set_control_visible(controls.get("aspect_ratio_selector"), is_image)\n'
             '        set_control_visible(controls.get("base_size_input"), is_image)\n'
             '        set_control_visible(controls.get("base_size_label"), is_image)\n',
-            "        # Libre Thinker: model and image pickers stay hidden (admin sets the model).\n"
+            "        # Libre Thinker Agent: model and image pickers stay hidden (admin sets the model).\n"
             '        for _lt_name in ("model_label", "model_selector", "reasoning_effort_selector", "image_model_selector",\n'
             '                         "aspect_ratio_selector", "base_size_input", "base_size_label"):\n'
             "            set_control_visible(controls.get(_lt_name), False)\n",
@@ -791,7 +791,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "registry/org/openoffice/Office/UI/Sidebar.xcu": [
         (
             '<value xml:lang="en-US">WriterAgent</value>',
-            '<value xml:lang="en-US">Libre Thinker</value>',
+            '<value xml:lang="en-US">Libre Thinker Agent</value>',
         ),
         (  # the separate "Python" sidebar deck is a developer tool: never shown
             'python_32.png</value>\n'
@@ -805,7 +805,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
         (
             '<value xml:lang="en-US">Chat with Document</value>',
-            '<value xml:lang="en-US">Ask Libre Thinker</value>',
+            '<value xml:lang="en-US">Ask Libre Thinker Agent</value>',
         ),
     ],
     # --- Bound the agent loop -------------------------------------------------
@@ -822,18 +822,18 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     ],
     # --- Remaining visible "WriterAgent" labels --------------------------------
     "Addons.xcu": [
-        ('<value xml:lang="en-US">WriterAgent</value>', '<value xml:lang="en-US">Libre Thinker</value>'),
+        ('<value xml:lang="en-US">WriterAgent</value>', '<value xml:lang="en-US">Libre Thinker Agent</value>'),
     ],
     "registry/org/openoffice/Office/UI/WriterWindowState.xcu": [
-        ('<value xml:lang="en-US">WriterAgent Review</value>', '<value xml:lang="en-US">Libre Thinker Review</value>'),
+        ('<value xml:lang="en-US">WriterAgent Review</value>', '<value xml:lang="en-US">Libre Thinker Agent Review</value>'),
     ],
     "plugin/writer/editselection.py": [
-        ('_("WriterAgent: Extend Selection")', '_("Libre Thinker: Extend Selection")'),
-        ('_("WriterAgent: Edit Selection")', '_("Libre Thinker: Edit Selection")'),
+        ('_("WriterAgent: Extend Selection")', '_("Libre Thinker Agent: Extend Selection")'),
+        ('_("WriterAgent: Edit Selection")', '_("Libre Thinker Agent: Edit Selection")'),
     ],
     "plugin/calc/editselection.py": [
         ('_("WriterAgent: Edit Selection (Calc)") if is_edit else _("WriterAgent: Extend Selection (Calc)")',
-         '_("Libre Thinker: Edit Selection (Calc)") if is_edit else _("Libre Thinker: Extend Selection (Calc)")'),
+         '_("Libre Thinker Agent: Edit Selection (Calc)") if is_edit else _("Libre Thinker Agent: Extend Selection (Calc)")'),
     ],
 }
 
@@ -848,7 +848,7 @@ def apply(filename: str, data: bytes) -> bytes:
         count = text.count(old)
         if count != 1:
             raise ValueError(
-                f"Libre Thinker patch for {filename} matched {count} times (expected 1); "
+                f"Libre Thinker Agent patch for {filename} matched {count} times (expected 1); "
                 "the vendored WriterAgent changed — update gateway/patches.py"
             )
         text = text.replace(old, new)

@@ -1,4 +1,4 @@
-# Libre Thinker gateway - SQLite storage
+# Libre Thinker Agent gateway - SQLite storage
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Device registry and request-metadata log.
 

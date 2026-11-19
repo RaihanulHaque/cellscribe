@@ -12,7 +12,7 @@ venv/
 **/libreoffice/*/user/
 
 # Built extension downloaded from the gateway for local install
-/LibreThinker.oxt
+/LibreThinkerAgent.oxt
 
 # LibreOffice document lock files
 .~lock.*#
