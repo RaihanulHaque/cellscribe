@@ -55,11 +55,12 @@ def provider_for(model: str) -> str:
 
 PROVIDERS = _provider_table()
 def _env(name: str, default: str = "") -> str:
-    """LIBRETHINKER_<name>, falling back to the pre-rename CELLSCRIBE_<name> so older .env files keep working."""
-    value = os.environ.get("LIBRETHINKER_" + name)
-    if value is None:
-        value = os.environ.get("CELLSCRIBE_" + name)
-    return default if value is None else value
+    """LIBRETHINKERAGENT_<name>, falling back to the older LIBRETHINKER_<name> and CELLSCRIBE_<name> so existing .env files keep working."""
+    for prefix in ("LIBRETHINKERAGENT_", "LIBRETHINKER_", "CELLSCRIBE_"):
+        value = os.environ.get(prefix + name)
+        if value is not None:
+            return value
+    return default
 
 
 DEFAULT_MODEL = _env("DEFAULT_MODEL", "deepseek/deepseek-v4.1-flash-1017")
@@ -74,7 +75,7 @@ if DEFAULT_MODEL not in _configured_models:
 ALLOWED_MODELS = [m for m in _configured_models if provider_for(m) in PROVIDERS]
 DROPPED_MODELS = [m for m in _configured_models if m not in ALLOWED_MODELS]
 ADMIN_TOKEN = _env("ADMIN_TOKEN", "")
-DB_PATH = _env("DB", "/data/librethinker.db")
+DB_PATH = _env("DB", "/data/librethinkeragent.db")
 REQUEST_TIMEOUT = float(_env("TIMEOUT", "300"))
 PUBLIC_URL = _env("PUBLIC_URL", "").rstrip("/")
 OXT_PATH = _env("OXT", "/app/vendor/WriterAgent.oxt")
@@ -85,7 +86,7 @@ client: httpx.AsyncClient | None = None
 # --- Pricing -----------------------------------------------------------------
 # USD per token: {"prompt", "completion", "cache_read", "cache_write"}.
 # OpenRouter publishes prices for every model it serves; they are fetched at
-# startup and refreshed daily. LIBRETHINKER_PRICES overrides or adds models
+# startup and refreshed daily. LIBRETHINKERAGENT_PRICES overrides or adds models
 # (needed for Mistral direct), as USD per million tokens:
 #   {"mistral-large-latest": {"in": 2, "out": 6, "cache_read": 0.2}}
 PRICES: dict[str, dict[str, float]] = {}
@@ -98,7 +99,7 @@ def _load_price_overrides() -> dict[str, dict[str, float]]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        print("librethinker: LIBRETHINKER_PRICES is not valid JSON; ignoring it", flush=True)
+        print("librethinkeragent: LIBRETHINKERAGENT_PRICES is not valid JSON; ignoring it", flush=True)
         return {}
     table: dict[str, dict[str, float]] = {}
     for name, entry in (data.items() if isinstance(data, dict) else []):
@@ -136,7 +137,7 @@ async def refresh_prices() -> None:
                 "cache_write": _per_token(pricing.get("input_cache_write")),
             }
     except Exception as exc:  # pricing is optional; never block the gateway on it
-        print(f"librethinker: could not fetch OpenRouter prices ({exc})", flush=True)
+        print(f"librethinkeragent: could not fetch OpenRouter prices ({exc})", flush=True)
     PRICES.update(_load_price_overrides())
 
 
@@ -198,13 +199,13 @@ async def startup() -> None:
         raise RuntimeError("Set OPENROUTER_API_KEY and/or MISTRAL_API_KEY")
     if not ALLOWED_MODELS:
         raise RuntimeError(
-            "None of LIBRETHINKER_ALLOWED_MODELS can be served with the configured keys "
+            "None of LIBRETHINKERAGENT_ALLOWED_MODELS can be served with the configured keys "
             "(ids with a '/' need OPENROUTER_API_KEY; bare ids need MISTRAL_API_KEY)"
         )
     if DROPPED_MODELS:
-        print(f"librethinker: no provider key for {', '.join(DROPPED_MODELS)}; not offering them", flush=True)
+        print(f"librethinkeragent: no provider key for {', '.join(DROPPED_MODELS)}; not offering them", flush=True)
     if not ADMIN_TOKEN:
-        raise RuntimeError("LIBRETHINKER_ADMIN_TOKEN is required")
+        raise RuntimeError("LIBRETHINKERAGENT_ADMIN_TOKEN is required")
     store.configure(DB_PATH)
     client = httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=10.0))
     PRICES.update(_load_price_overrides())
@@ -445,7 +446,7 @@ echo "Open LibreOffice and try =PROMPT(\"hello\") in Calc."
 def _public_base(request: Request) -> str:
     base = PUBLIC_URL or str(request.base_url).rstrip("/")
     if not re.fullmatch(r"https?://[A-Za-z0-9.\-:\[\]]+", base):
-        raise HTTPException(status_code=400, detail="Cannot determine a safe gateway URL; set LIBRETHINKER_PUBLIC_URL")
+        raise HTTPException(status_code=400, detail="Cannot determine a safe gateway URL; set LIBRETHINKERAGENT_PUBLIC_URL")
     return base
 
 
@@ -465,7 +466,6 @@ def _setup_params(request: Request, device: dict[str, Any]) -> tuple[str, str, s
 
 
 @app.get("/setup/LibreThinkerAgent.oxt")
-@app.get("/setup/LibreThinker.oxt", include_in_schema=False)  # link in setup scripts made before the rename
 async def setup_oxt(request: Request) -> Response:
     """The single extension (WriterAgent + token entry); identical for every PC."""
     if not os.path.exists(OXT_PATH):
@@ -497,7 +497,7 @@ async def list_models(device: dict[str, Any] = Depends(_require_device)) -> dict
     return {
         "object": "list",
         "data": [
-            {"id": name, "object": "model", "created": 0, "owned_by": "librethinker"}
+            {"id": name, "object": "model", "created": 0, "owned_by": "librethinkeragent"}
             for name in models
         ],
     }

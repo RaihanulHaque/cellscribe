@@ -2,13 +2,13 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    LIBRETHINKER_DB=/data/librethinker.db
+    LIBRETHINKERAGENT_DB=/data/librethinkeragent.db
 
 WORKDIR /app
 
-RUN useradd --create-home --shell /usr/sbin/nologin librethinker \
+RUN useradd --create-home --shell /usr/sbin/nologin librethinkeragent \
     && mkdir -p /data \
-    && chown -R librethinker:librethinker /data
+    && chown -R librethinkeragent:librethinkeragent /data
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -17,7 +17,7 @@ COPY app.py store.py packager.py patches.py admin.html revoked.html requests.htm
 COPY brand/logo.svg brand/logo_64.png ./
 COPY brand ./brand
 
-USER librethinker
+USER librethinkeragent
 
 EXPOSE 8080
 

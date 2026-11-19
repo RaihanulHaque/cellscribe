@@ -16,7 +16,7 @@ import time
 from contextlib import contextmanager
 from typing import Any
 
-_DB_PATH = "/data/librethinker.db"
+_DB_PATH = "/data/librethinkeragent.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -69,12 +69,14 @@ def configure(path: str) -> None:
     parent = os.path.dirname(os.path.abspath(path))
     if parent:
         os.makedirs(parent, exist_ok=True)
-        # Before the rename the file was cellscribe.db; adopt it so devices and history carry over.
-        legacy = os.path.join(parent, "cellscribe.db")
-        if not os.path.exists(path) and os.path.exists(legacy):
-            for suffix in ("", "-wal", "-shm"):
-                if os.path.exists(legacy + suffix):
-                    os.rename(legacy + suffix, path + suffix)
+        # Earlier builds named the file librethinker.db or cellscribe.db; adopt it so devices and history carry over.
+        for old_name in ("librethinker.db", "cellscribe.db"):
+            legacy = os.path.join(parent, old_name)
+            if not os.path.exists(path) and os.path.exists(legacy):
+                for suffix in ("", "-wal", "-shm"):
+                    if os.path.exists(legacy + suffix):
+                        os.rename(legacy + suffix, path + suffix)
+                break
     with _db() as conn:
         conn.executescript(_SCHEMA)
         # Databases created before cost tracking get the new columns in place.
@@ -114,7 +116,7 @@ def create_device(name: str, models: list[str] | None = None) -> tuple[int, str]
 
     The plaintext token is returned exactly once; only its hash is stored.
     """
-    token = "lt_" + secrets.token_urlsafe(32)
+    token = "lta_" + secrets.token_urlsafe(32)
     with _db() as conn:
         cur = conn.execute(
             "INSERT INTO devices (name, token_hash, models, active, created_at) VALUES (?, ?, ?, 1, ?)",

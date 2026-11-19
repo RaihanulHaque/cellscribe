@@ -15,20 +15,20 @@ The extension checks the token with the gateway (a wrong or revoked token is rej
 message), picks the default model from those the PC may use, and writes `writeragent.json`.
 
 For scripted rollouts the same action accepts the token directly
-(`org.librethinker.config:SetToken` with a `Token` property), skipping the dialog.
+(`org.librethinkeragent.config:SetToken` with a `Token` property), skipping the dialog.
 
 ### Option B: one command (Linux)
 
 The dashboard shows this command next to each new token:
 
 ```bash
-curl -fsSL -H "Authorization: Bearer lt_..." http://<gateway-ip>:8080/setup.sh | bash
+curl -fsSL -H "Authorization: Bearer lta_..." http://<gateway-ip>:8080/setup.sh | bash
 ```
 
 The script is generated for that device. It downloads `LibreThinkerAgent.oxt`, installs it with `unopkg`
 (clearing conda from `PATH` and a stale lock if needed), and writes `writeragent.json`, merging with
 `jq` when available and otherwise backing up and replacing the file. It writes the gateway's
-default model; add `?model=<id>` to the URL to choose another. Set `LIBRETHINKER_PUBLIC_URL` if PCs
+default model; add `?model=<id>` to the URL to choose another. Set `LIBRETHINKERAGENT_PUBLIC_URL` if PCs
 reach the gateway under a different address than the one in the request.
 
 ### Option C: `provision_pc.py`
@@ -64,7 +64,7 @@ flatpak run --command=unopkg org.libreoffice.LibreOffice add LibreThinkerAgent.o
 
 python3 provision/provision_pc.py \
   --gateway http://<gateway-ip>:8080 \
-  --token lt_... \
+  --token lta_... \
   --profile ~/.var/app/org.libreoffice.LibreOffice/config/libreoffice/4/user
 ```
 
@@ -77,24 +77,25 @@ closed (`unopkg add -f LibreThinkerAgent.oxt`, or Option A again). The token and
 
 Earlier builds were called CellScribe, Libre Agent and Libre Thinker. On an existing server:
 
-1. **Settings.** Rename `CELLSCRIBE_*` to `LIBRETHINKER_*` in `gateway/.env`. Old names are still read
-   as a fallback, so this can wait.
-2. **Data.** The compose volume is now `gateway_librethinker-data` (was `gateway_cellscribe-data`).
-   Copy the data across once, with the old container stopped:
+1. **Settings.** Rename `CELLSCRIBE_*` or `LIBRETHINKER_*` to `LIBRETHINKERAGENT_*` in `gateway/.env`.
+   The old names are still read as a fallback (the new names win), so this can wait.
+2. **Data.** The compose volume is now `gateway_librethinkeragent-data` (it was
+   `gateway_librethinker-data`, and `gateway_cellscribe-data` before that). Copy the data across once,
+   with the old container stopped:
 
    ```bash
-   docker rm -f cellscribe-gateway
+   docker rm -f librethinker-gateway        # or cellscribe-gateway
    cd gateway && docker compose create --build
-   docker run --rm -v gateway_cellscribe-data:/old:ro -v gateway_librethinker-data:/new \
-     python:3.12-slim sh -c 'cp -a /old/. /new/'
+   docker run --rm -v gateway_librethinker-data:/old:ro -v gateway_librethinkeragent-data:/new      python:3.12-slim sh -c 'cp -a /old/. /new/'
    docker compose up -d
    ```
 
-   The gateway renames a copied `cellscribe.db` to `librethinker.db` on start, so devices, tokens and
-   request history carry over. Keep the old volume until you have checked the dashboard.
-3. **PCs.** Reinstall `LibreThinkerAgent.oxt` on each PC. Existing device tokens (`cs_…`) keep working;
-   new tokens start with `lt_`. Setup scripts generated before the rename point at an old download
-   URL, so generate a new one from the dashboard.
+   The gateway renames a copied `librethinker.db` or `cellscribe.db` to `librethinkeragent.db` on
+   start, so devices, tokens and request history carry over. Keep the old volume until you have
+   checked the dashboard.
+3. **PCs.** Reinstall `LibreThinkerAgent.oxt` on each PC. Existing device tokens (`cs_…`, `lt_…`) keep
+   working; new tokens start with `lta_`. Setup scripts generated before the rename point at a
+   download URL that no longer exists, so generate a new one from the dashboard.
 
 ## LibreOffice version and Python on the PC
 

@@ -8,7 +8,7 @@ token); the extension validates it against the gateway and writes WriterAgent's
 writeragent.json. The Mistral key is never involved.
 
 vendor/WriterAgent.oxt stays untouched. While building we add our handler and
-two configuration files under librethinker/, register them in the manifest, drop
+two configuration files under librethinkeragent/, register them in the manifest, drop
 WriterAgent's update feed so the Extension Manager cannot swap our package for
 the upstream one, and apply the small exact patches in patches.py (Calc sheet
 data in chat context, larger context, bounded tool rounds).
@@ -25,12 +25,12 @@ import zipfile
 
 import patches
 
-SERVICE = "org.librethinker.ConfigHandler"
-PROTOCOL = "org.librethinker.config:"
+SERVICE = "org.librethinkeragent.ConfigHandler"
+PROTOCOL = "org.librethinkeragent.config:"
 
-_MANIFEST_ENTRIES = """  <manifest:file-entry manifest:media-type="application/vnd.sun.star.uno-component;type=Python" manifest:full-path="librethinker/handler.py"/>
-  <manifest:file-entry manifest:media-type="application/vnd.sun.star.configuration-data" manifest:full-path="librethinker/ProtocolHandler.xcu"/>
-  <manifest:file-entry manifest:media-type="application/vnd.sun.star.configuration-data" manifest:full-path="librethinker/Addons.xcu"/>
+_MANIFEST_ENTRIES = """  <manifest:file-entry manifest:media-type="application/vnd.sun.star.uno-component;type=Python" manifest:full-path="librethinkeragent/handler.py"/>
+  <manifest:file-entry manifest:media-type="application/vnd.sun.star.configuration-data" manifest:full-path="librethinkeragent/ProtocolHandler.xcu"/>
+  <manifest:file-entry manifest:media-type="application/vnd.sun.star.configuration-data" manifest:full-path="librethinkeragent/Addons.xcu"/>
 """
 
 _PROTOCOL_HANDLER = """<?xml version="1.0" encoding="UTF-8"?>
@@ -53,7 +53,7 @@ _ADDONS = """<?xml version="1.0" encoding="UTF-8"?>
                     oor:name="Addons" oor:package="org.openoffice.Office">
   <node oor:name="AddonUI">
     <node oor:name="OfficeMenuBarMerge">
-      <node oor:name="org.librethinker.config.Menu" oor:op="replace">
+      <node oor:name="org.librethinkeragent.config.Menu" oor:op="replace">
         <prop oor:name="MergePoint"><value>.uno:ToolsMenu\\.uno:ConfigureDialog</value></prop>
         <prop oor:name="MergeCommand"><value>AddAfter</value></prop>
         <prop oor:name="MergeFallback"><value>AddPath</value></prop>
@@ -297,7 +297,7 @@ def build_oxt(base_oxt: str, endpoint: str, default_model: str) -> bytes:
             else:
                 data = patches.apply(item.filename, data)
             out.writestr(item, data)
-        out.writestr("librethinker/ProtocolHandler.xcu", _PROTOCOL_HANDLER % fmt)
-        out.writestr("librethinker/Addons.xcu", _ADDONS % fmt)
-        out.writestr("librethinker/handler.py", _HANDLER % fmt)
+        out.writestr("librethinkeragent/ProtocolHandler.xcu", _PROTOCOL_HANDLER % fmt)
+        out.writestr("librethinkeragent/Addons.xcu", _ADDONS % fmt)
+        out.writestr("librethinkeragent/handler.py", _HANDLER % fmt)
     return buf.getvalue()

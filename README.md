@@ -192,7 +192,7 @@ and set at least:
 
 ```dotenv
 OPENROUTER_API_KEY=sk-or-v1-...        # and/or MISTRAL_API_KEY=...
-LIBRETHINKER_ADMIN_TOKEN=a-long-random-string
+LIBRETHINKERAGENT_ADMIN_TOKEN=a-long-random-string
 ```
 
 Generate the admin token with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
@@ -272,19 +272,19 @@ All settings are environment variables in `gateway/.env`.
 | --- | --- | --- | --- |
 | `OPENROUTER_API_KEY` | one of the two | — | Serves model ids with a vendor prefix, e.g. `deepseek/deepseek-v4.1-flash-1017`. |
 | `MISTRAL_API_KEY` | one of the two | — | Serves bare Mistral ids, e.g. `mistral-large-latest`. |
-| `LIBRETHINKER_ADMIN_TOKEN` | yes | — | Protects `/admin/*` and the dashboard's data calls. |
-| `LIBRETHINKER_DEFAULT_MODEL` | no | `deepseek/deepseek-v4.1-flash-1017` | Model used when a request names none, and the model new PCs are set to. |
-| `LIBRETHINKER_ALLOWED_MODELS` | no | default model | Comma-separated allow-list offered to PCs. Models whose provider has no key are dropped at startup. |
+| `LIBRETHINKERAGENT_ADMIN_TOKEN` | yes | — | Protects `/admin/*` and the dashboard's data calls. |
+| `LIBRETHINKERAGENT_DEFAULT_MODEL` | no | `deepseek/deepseek-v4.1-flash-1017` | Model used when a request names none, and the model new PCs are set to. |
+| `LIBRETHINKERAGENT_ALLOWED_MODELS` | no | default model | Comma-separated allow-list offered to PCs. Models whose provider has no key are dropped at startup. |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter base URL. |
 | `MISTRAL_BASE_URL` | no | `https://api.mistral.ai/v1` | Base URL for bare model ids; point it at another OpenAI-compatible server if needed. |
-| `LIBRETHINKER_RETRIES` | no | `2` | Retries for transient upstream failures (dropped connection, 429/502/503/504) before an error reaches the PC. |
-| `LIBRETHINKER_PRICES` | no | OpenRouter's price list | JSON of USD per million tokens for models without a public price (Mistral direct), e.g. `{"mistral-large-latest":{"in":2,"out":6,"cache_read":0.2}}`. Used for cost when the provider reports none. |
-| `LIBRETHINKER_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
-| `LIBRETHINKER_PUBLIC_URL` | no | from request | Gateway URL embedded in `setup.sh` and `LibreThinkerAgent.oxt`. |
-| `LIBRETHINKER_DB` | no | `/data/librethinker.db` | SQLite path inside the container. |
-| `LIBRETHINKER_OXT` | no | `/app/vendor/WriterAgent.oxt` | Base extension package the gateway patches into `LibreThinkerAgent.oxt`. |
+| `LIBRETHINKERAGENT_RETRIES` | no | `2` | Retries for transient upstream failures (dropped connection, 429/502/503/504) before an error reaches the PC. |
+| `LIBRETHINKERAGENT_PRICES` | no | OpenRouter's price list | JSON of USD per million tokens for models without a public price (Mistral direct), e.g. `{"mistral-large-latest":{"in":2,"out":6,"cache_read":0.2}}`. Used for cost when the provider reports none. |
+| `LIBRETHINKERAGENT_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
+| `LIBRETHINKERAGENT_PUBLIC_URL` | no | from request | Gateway URL embedded in `setup.sh` and `LibreThinkerAgent.oxt`. |
+| `LIBRETHINKERAGENT_DB` | no | `/data/librethinkeragent.db` | SQLite path inside the container. |
+| `LIBRETHINKERAGENT_OXT` | no | `/app/vendor/WriterAgent.oxt` | Base extension package the gateway patches into `LibreThinkerAgent.oxt`. |
 
-Data persists in the compose volume (it appears as `gateway_librethinker-data`), so restarts keep
+Data persists in the compose volume (it appears as `gateway_librethinkeragent-data`), so restarts keep
 devices and logs. `docker compose down -v` deletes everything, including all tokens.
 
 ---
@@ -304,7 +304,7 @@ shown in the dashboard log.
 | `mistral-small-latest` | Questions only | Accurate answers, but edits land off by one row and it often replies instead of editing. |
 
 A PC registered with every model ticked stores "all" and follows later changes to
-`LIBRETHINKER_ALLOWED_MODELS`. To change an existing PC, tick the models in the dashboard and click
+`LIBRETHINKERAGENT_ALLOWED_MODELS`. To change an existing PC, tick the models in the dashboard and click
 **Apply ticked models** on its row (or `POST /admin/devices/{id}/models` with `{"models": []}` for
 all). The sidebar's model picker is hidden, so employees cannot switch to a weaker model by
 accident.
@@ -331,7 +331,7 @@ The page refreshes itself every few seconds (the **Live** switch in the header p
   their creation and revoke dates and total usage, and a search box.
 
 **Where cost comes from.** For OpenRouter models the gateway records the cost OpenRouter itself
-reports, so cache discounts are already included. Other models are priced from `LIBRETHINKER_PRICES`;
+reports, so cache discounts are already included. Other models are priced from `LIBRETHINKERAGENT_PRICES`;
 without a price their cost shows as "—" and they are not added to spend. Requests logged before
 cost tracking also show "—": the dashboard never estimates a figure it was not given. The "saved"
 amount is the cached tokens' discount against the full input price, from OpenRouter's public price
@@ -386,7 +386,7 @@ firewall.
 | Writer replies in the sidebar but the document is unchanged | The model answered instead of editing. Use the default model or `mistral-large-latest`, not `mistral-small-latest`. |
 | A file opens with a "locked" warning | LibreOffice was killed while the file was open and left `.~lock.<name>#` next to it. With LibreOffice closed, delete that file. |
 | Worked yesterday, now connection refused | The gateway's LAN address changed. Give it a static lease or a DNS name. |
-| Container exits at startup | No provider key, no servable model in `LIBRETHINKER_ALLOWED_MODELS`, or `LIBRETHINKER_ADMIN_TOKEN` missing. Check `docker compose logs`. |
+| Container exits at startup | No provider key, no servable model in `LIBRETHINKERAGENT_ALLOWED_MODELS`, or `LIBRETHINKERAGENT_ADMIN_TOKEN` missing. Check `docker compose logs`. |
 
 Useful commands:
 

@@ -801,7 +801,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             'python_32.png</value>\n'
             '                </prop>\n'
             '                <prop oor:name="ContextList">\n'
-            '                    <value oor:separator=";">com.sun.star.librethinker.Hidden, any, visible;</value>',
+            '                    <value oor:separator=";">com.sun.star.librethinkeragent.Hidden, any, visible;</value>',
         ),
         (
             '<value xml:lang="en-US">Chat with Document</value>',

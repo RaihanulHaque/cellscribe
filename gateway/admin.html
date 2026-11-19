@@ -117,7 +117,7 @@ async function loadStats() {
     kpi("Latency", t.latency_p50 === null ? "—" : (t.latency_p50 / 1000).toFixed(1) + " s",
         t.latency_p95 === null ? "median" : "median, p95 " + (t.latency_p95 / 1000).toFixed(1) + " s"),
   ].join("");
-  $("statNote").textContent = t.unpriced ? t.unpriced + " requests have no recorded cost (logged before cost tracking, or the model has no price in LIBRETHINKER_PRICES)" : "";
+  $("statNote").textContent = t.unpriced ? t.unpriced + " requests have no recorded cost (logged before cost tracking, or the model has no price in LIBRETHINKERAGENT_PRICES)" : "";
   renderChart(s.by_day);
   renderModels(s.by_model);
 }
@@ -224,7 +224,7 @@ async function loadModels() {
 }
 
 // All ticked means "every gateway model" (stored empty), so the PC follows
-// later changes to LIBRETHINKER_ALLOWED_MODELS instead of a frozen list.
+// later changes to LIBRETHINKERAGENT_ALLOWED_MODELS instead of a frozen list.
 function pickedModels() {
   const boxes = [...document.querySelectorAll("#modelPicker input")];
   const picked = boxes.filter((el) => el.checked).map((el) => el.value);

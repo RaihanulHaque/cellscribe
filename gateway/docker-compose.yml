@@ -1,23 +1,23 @@
 services:
-  librethinker-gateway:
+  librethinkeragent-gateway:
     build: .
-    container_name: librethinker-gateway
+    container_name: librethinkeragent-gateway
     restart: unless-stopped
     env_file:
       - .env
     ports:
       - "8080:8080"
     volumes:
-      - librethinker-data:/data
+      - librethinkeragent-data:/data
       - ../vendor:/app/vendor:ro
     # The gateway holds the Mistral key and every device token. Keep it on the
     # internal network only; do not publish it to the internet.
     networks:
-      - librethinker
+      - librethinkeragent
 
 volumes:
-  librethinker-data:
+  librethinkeragent-data:
 
 networks:
-  librethinker:
+  librethinkeragent:
     driver: bridge
