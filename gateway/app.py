@@ -74,6 +74,14 @@ DROPPED_MODELS = [m for m in _configured_models if m not in ALLOWED_MODELS]
 ADMIN_TOKEN = _env("ADMIN_TOKEN", "")
 DB_PATH = _env("DB", "/data/librethinkeragent.db")
 REQUEST_TIMEOUT = float(_env("TIMEOUT", "300"))
+# Reasoning level for requests that do not choose one (the sidebar sends none).
+# DeepSeek's own default sometimes "thinks" for 2-10k tokens before a single
+# tool call (40-108 s per request on the gateway logs), which looked like a
+# hang. Only models whose id starts with a REASONING_MODELS prefix get it:
+# OpenRouter routes with require_parameters, so a model that cannot reason
+# would otherwise fail. Empty REASONING_EFFORT sends nothing.
+REASONING_EFFORT = _env("REASONING_EFFORT", "low").strip().lower()
+REASONING_MODELS = tuple(p.strip() for p in _env("REASONING_MODELS", "deepseek/").split(",") if p.strip())
 PUBLIC_URL = _env("PUBLIC_URL", "").rstrip("/")
 OXT_PATH = _env("OXT", "/app/vendor/WriterAgent.oxt")
 
@@ -503,6 +511,13 @@ async def chat_completions(
         # particular); otherwise OpenRouter may pick a host that ignores them.
         prefs = payload.get("provider") if isinstance(payload.get("provider"), dict) else {}
         payload["provider"] = {"require_parameters": True, **prefs}
+        if (
+            REASONING_EFFORT
+            and model.startswith(REASONING_MODELS)
+            and "reasoning" not in payload
+            and "reasoning_effort" not in payload
+        ):
+            payload["reasoning"] = {"effort": REASONING_EFFORT}
         # Ask for the real cost (cache discounts included) in the usage block.
         payload.setdefault("usage", {"include": True})
         if stream:

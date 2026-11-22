@@ -29,6 +29,15 @@ READ_RANGE_MAX_CELLS = 400
 # tool per model call (it sends parallel_tool_calls=false), so a table plus a
 # chart needs ~10 rounds; 8 cut such tasks off half-done in real use.
 MAX_TOOL_ROUNDS = 20
+# Seconds without progress before the sidebar says the AI is still working
+# (WriterAgent ships 30 and labels it "Hung:"). One slow non-streaming model
+# call took up to 108 s on the gateway logs.
+WATCHDOG_SECONDS = 120
+_REPLY_LIMIT_HELP = (
+    "Longest single reply in tokens, including the model&apos;s thinking. "
+    "This is not the context size: the model reads up to about 164k tokens, "
+    "and the agent sends up to about 15k tokens of your document."
+)
 
 
 _CALC_SHEET_CSV = '''
@@ -818,6 +827,48 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             "                                             'default': 15,\n",
             "'config': {   'max_tool_rounds': {   'type': 'int',\n"
             f"                                             'default': {MAX_TOOL_ROUNDS},\n",
+        ),
+    ],
+    # --- No false "Hung:" alarms -----------------------------------------------
+    # The watchdog showed "Hung: tool_execute round 0 delegate_to_specialized_..."
+    # whenever nothing reported progress for 30 s. A delegated (inner) agent
+    # makes non-streaming model calls that took 40-108 s on the gateway logs
+    # (long DeepSeek reasoning), and its steps never reported progress, so a
+    # working agent looked crashed. Inner steps now count as progress, the
+    # threshold allows one slow model call, and the label says what is true.
+    "plugin/framework/logging.py": [
+        ("_watchdog_threshold_sec = 30", f"_watchdog_threshold_sec = {WATCHDOG_SECONDS}  # Libre Thinker Agent: WriterAgent ships 30"),
+        ('_HUNG_STATUS_PREFIX = "Hung:"', '_HUNG_STATUS_PREFIX = "Still working"'),
+        (
+            '        hung_text = "%s %s round %s" % (_HUNG_STATUS_PREFIX, phase, round_num)\n'
+            "        if tool_name:\n"
+            '            hung_text += " %s" % tool_name',
+            '        hung_text = "%s\u2026 the AI is taking longer than usual (Stop cancels)" % _HUNG_STATUS_PREFIX',
+        ),
+    ],
+    "plugin/doc/specialized_base.py": [
+        (
+            "                if ctx.status_callback:\n"
+            '                    ctx.status_callback(f"Tool: {step.name}...")\n',
+            "                try:  # Libre Thinker Agent: an inner step is progress for the watchdog\n"
+            "                    from plugin.framework.logging import note_activity\n"
+            "                    note_activity()\n"
+            "                except Exception:\n"
+            "                    pass\n"
+            "                if ctx.status_callback:\n"
+            '                    ctx.status_callback(f"Tool: {step.name}...")\n',
+        ),
+    ],
+    # --- "Max Tokens" is the reply limit, not the context size -----------------
+    "Dialogs/SettingsDialog.xdl": [
+        (
+            'dlg:id="label_chat_max_tokens" dlg:page="1" dlg:left="165" dlg:top="90" dlg:width="60" dlg:height="10" dlg:value="Max Tokens:"',
+            'dlg:id="label_chat_max_tokens" dlg:page="1" dlg:left="165" dlg:top="90" dlg:width="60" dlg:height="10" dlg:value="Reply limit:"'
+            ' dlg:help-text="' + _REPLY_LIMIT_HELP + '"',
+        ),
+        (
+            '<dlg:textfield dlg:id="chat_max_tokens" dlg:page="1"',
+            '<dlg:textfield dlg:help-text="' + _REPLY_LIMIT_HELP + '" dlg:id="chat_max_tokens" dlg:page="1"',
         ),
     ],
     # --- Remaining visible "WriterAgent" labels --------------------------------
