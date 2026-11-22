@@ -266,6 +266,19 @@ g_ImplementationHelper.addImplementation(Handler, SERVICE, ("com.sun.star.frame.
 
 # Libre Thinker Agent artwork that replaces WriterAgent's own images in the package.
 _BRAND_DIR = pathlib.Path(__file__).resolve().parent / "brand"
+# Files added to the package as they are (new Libre Thinker Agent modules,
+# e.g. plugin/draw/flowchart.py); a same-named WriterAgent file is replaced.
+_EXTENSION_DIR = pathlib.Path(__file__).resolve().parent / "extension"
+
+
+def _extension_files() -> dict[str, bytes]:
+    if not _EXTENSION_DIR.is_dir():
+        return {}
+    return {
+        path.relative_to(_EXTENSION_DIR).as_posix(): path.read_bytes()
+        for path in sorted(_EXTENSION_DIR.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    }
 _BRAND_ASSETS = {
     "assets/logo.jpg": "logo_256.jpg",
     "assets/logo_32.png": "logo_32.png",
@@ -279,8 +292,11 @@ def build_oxt(base_oxt: str, endpoint: str, default_model: str) -> bytes:
     settings = json.dumps({"endpoint": endpoint, "model": default_model})
     fmt = {"settings": repr(settings), "svc": SERVICE, "proto": PROTOCOL}
     buf = io.BytesIO()
+    extra = _extension_files()
     with zipfile.ZipFile(base_oxt) as src, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as out:
         for item in src.infolist():
+            if item.filename in extra:
+                continue
             data = src.read(item.filename)
             if item.filename == "META-INF/manifest.xml":
                 text = data.decode("utf-8")
@@ -300,4 +316,6 @@ def build_oxt(base_oxt: str, endpoint: str, default_model: str) -> bytes:
         out.writestr("librethinkeragent/ProtocolHandler.xcu", _PROTOCOL_HANDLER % fmt)
         out.writestr("librethinkeragent/Addons.xcu", _ADDONS % fmt)
         out.writestr("librethinkeragent/handler.py", _HANDLER % fmt)
+        for name, data in extra.items():
+            out.writestr(name, data)
     return buf.getvalue()

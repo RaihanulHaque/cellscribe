@@ -628,6 +628,26 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     ],
     # --- Calc prompt: answer from the data, batch edits, ordinary formulas -----
     "plugin/framework/prompts.py": [
+        # --- Draw: flowcharts in one call (plugin/draw/flowchart.py) ----------
+        # WriterAgent told the model to build flowcharts shape by shape through
+        # the nested shapes agent: slow (the "Hung: ... draw_toolset" status),
+        # and every box got its own size, colour and auto-shrunk font.
+        (
+            'Do delegate_to_specialized_draw_toolset(domain="shapes") then shape_upsert + shape_connect for flowcharts and process diagrams because an empty get_draw_tree means the task failed."""',
+            "For flowcharts, process, workflow, approval, decision and step diagrams, call draw_flowchart directly: one call draws the whole "
+            "diagram in the house style. Do not delegate them and do not place shapes one by one. To change one step (text, colour) use "
+            "flowchart_update_step; to add, remove or reorder steps, flowchart_read then draw_flowchart again with the full list. "
+            'Use delegate_to_specialized_draw_toolset(domain="shapes") for other shape work."""',
+        ),
+        (
+            "3. Use the specialized delegation tool to perform shape operations (create, edit, group, paper-form fill via fill_draw_fields), transitions, masters, notes, or charts.\n",
+            "3. Flowcharts and process diagrams: draw_flowchart (one call), then flowchart_update_step for single-step changes. "
+            "Other shape operations (create, edit, group, paper-form fill via fill_draw_fields), transitions, masters, notes, or charts: the specialized delegation tool.\n",
+        ),
+        (
+            '        return _("AI: I can help you create and edit polished, colorful shapes in Draw and Impress. Try me!")\n',
+            '        return _("Hi, I\'m Libre Thinker Agent. Describe a process and I\'ll draw the flowchart, or ask me to change one step.")\n',
+        ),
         # --- Writer: do the asked work in few calls, no decoration spiral -----
         # Measured: minutes took 20 rounds / 5 min of colours and custom styles
         # and replaced a heading with "[REDACTED]"; translation went paragraph
