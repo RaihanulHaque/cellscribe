@@ -56,9 +56,13 @@ Errors use OpenAI's shape so LibreOffice shows a readable message, for example:
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   ├── requirements.txt
+│   ├── setup-pc.sh          Office PC installer; served per device as /setup.sh, or run standalone
+│   ├── smoke_test.sh        Non-destructive health and security checks for a running gateway
+│   ├── backup.sh            Consistent database snapshot (for cron on the server)
 │   └── .env.example         Template; copy to gateway/.env and fill in
 ├── provision/
 │   └── provision_pc.py      Writes writeragent.json for a Linux PC
+├── docs/                    PC setup options, WriterAgent changes, tested behaviour, API reference
 ├── samples/                 Test files: a sales register (CSV) and five office .docx documents
 ├── vendor/
 │   └── WriterAgent.oxt      Pinned upstream extension package (unmodified)
@@ -71,7 +75,7 @@ Errors use OpenAI's shape so LibreOffice shows a readable message, for example:
 
 - Release tag 0.8.84 (the package reports 0.8.85)
 - SHA-256 `445e495556b1e67e20b5777eb96c7b6e1cb082a5bd871b4f9f6b46f5f99bf73c`
-- Tested on LibreOffice 24.8.7 (Ubuntu 24.10) and LibreOffice 26.2
+- Tested on LibreOffice 24.8.7 (Ubuntu 24.10), 26.2 (Ubuntu 26.04) and 26.8 (PPA on Ubuntu 24.04 and Linux Mint 22)
 
 The upstream release asset was replaced on 2026-11-01, after its 2026-09-19 release date, so keep
 this copy. To upgrade, replace the file, rebuild the gateway, and confirm every patch in

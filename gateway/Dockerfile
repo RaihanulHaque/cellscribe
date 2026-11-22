@@ -13,7 +13,7 @@ RUN useradd --create-home --shell /usr/sbin/nologin librethinkeragent \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py store.py packager.py patches.py admin.html revoked.html requests.html admin.css admin.js ./
+COPY app.py store.py packager.py patches.py setup-pc.sh admin.html revoked.html requests.html admin.css admin.js ./
 COPY brand/logo.svg brand/logo_64.png ./
 COPY brand ./brand
 

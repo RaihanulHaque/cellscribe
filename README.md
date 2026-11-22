@@ -19,6 +19,7 @@ gateway, and only the gateway holds the provider key (OpenRouter and/or Mistral)
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
+- [Deploying to a server](#deploying-to-a-server)
 - [Setting up office PCs](#setting-up-office-pcs)
 - [Verifying the setup](#verifying-the-setup)
 - [Configuration reference](#configuration-reference)
@@ -173,8 +174,9 @@ single PC, and lets you change model or provider centrally.
 | AI provider | An [OpenRouter](https://openrouter.ai) key with credit, and/or a Mistral API key |
 
 LibreOffice 24.8 is mandatory: on an older version (for example 24.2, the default on Ubuntu 24.04)
-the install fails with `unsatisfied dependencies`. A conda or pyenv Python on `PATH` also breaks
-the install (`std::bad_alloc`). Fixes are in [docs/office-pc-setup.md](docs/office-pc-setup.md#libreoffice-version-and-python-on-the-pc).
+the install fails with `unsatisfied dependencies`. On Ubuntu and Ubuntu-based systems (Linux Mint,
+Zorin, Pop!_OS) the one-command `setup.sh` upgrades LibreOffice itself. Details and manual fixes are in
+[docs/office-pc-setup.md](docs/office-pc-setup.md#libreoffice-version-and-python-on-the-pc).
 
 ---
 
@@ -232,6 +234,35 @@ restart LibreOffice, and paste the token under **Tools → Libre Thinker Agent: 
 
 ---
 
+## Deploying to a server
+
+1. **Get the code on the server.** `git clone <your-repo-url>` and `cd gateway`. Keep the whole
+   repository: the compose file mounts `../vendor` (the pinned WriterAgent package).
+2. **Configure.** `cp .env.example .env`, then set a provider key, a random admin token
+   (`python3 -c "import secrets; print(secrets.token_urlsafe(32))"`) and
+   `LIBRETHINKERAGENT_PUBLIC_URL`, the address the PCs will use.
+3. **Network.** On a trusted LAN or VPN the defaults are fine. For TLS, set
+   `LIBRETHINKERAGENT_BIND=127.0.0.1`, put a reverse proxy in front (Caddy shown) and use its
+   `https://` address as the public URL:
+
+   ```text
+   agent.example.com {
+       reverse_proxy 127.0.0.1:8080
+   }
+   ```
+
+4. **Start.** `docker compose up -d --build`, then `docker compose ps` should say `healthy`.
+5. **Check.** `./smoke_test.sh http://<server>:8080` runs read-only checks (pages, auth refusal,
+   extension download, security headers, admin API). Add `DEVICE_TOKEN=lta_... ` to also send one
+   tiny chat request. It creates nothing, so it leaves no test devices behind.
+6. **Back up.** `./backup.sh` writes a consistent database snapshot to `gateway/backups/` and keeps the
+   newest 14; run it from cron, e.g. `0 2 * * * cd /opt/libre-agent/gateway && ./backup.sh`.
+7. **Update.** `git pull && docker compose up -d --build`. Data lives in the compose volume and
+   survives rebuilds. Then reinstall the extension on PCs only if it changed.
+8. **Logs.** `docker compose logs -f --tail=50`. Container logs rotate (3 files of 10 MB).
+
+---
+
 ## Setting up office PCs
 
 Close LibreOffice on the PC first. The simplest route needs no command line:
@@ -242,8 +273,25 @@ Close LibreOffice on the PC first. The simplest route needs no command line:
 3. Open **Tools → Libre Thinker Agent: Enter access token…** and paste the PC's token. The extension
    checks it with the gateway and configures itself.
 
-Other routes (one-command `setup.sh`, `provision_pc.py`, Flatpak, many PCs, updating PCs, and
-upgrading a gateway that ran under an earlier name) are in
+**Linux, one command (recommended).** The dashboard shows this next to each new token:
+
+```bash
+curl -fsSL -H "Authorization: Bearer lta_..." http://<gateway-ip>:8080/setup.sh | bash
+```
+
+Close LibreOffice first. The script prepares LibreOffice and installs the agent; on a PC that already
+has LibreOffice 24.8+ it takes seconds, and when LibreOffice must be upgraded it takes several
+minutes and asks for the user's password. It is safe to re-run. What it does on the PC:
+
+- Checks the gateway and the token before touching anything.
+- On Ubuntu, Linux Mint and other Ubuntu-based systems: upgrades LibreOffice older than 24.8 from the
+  official LibreOffice PPA, and adds what is missing (Writer, Calc, the matching `python3-uno`, and the
+  desktop look packages, without which LibreOffice looks dated). `LTA_NO_UPGRADE=1` turns the upgrade off.
+- Installs the extension and writes the PC's token and model.
+- Warns when a second LibreOffice (App Center Snap or Flatpak) is installed: that copy does not get the
+  agent, so remove it (`sudo snap remove libreoffice`) to make the menu open the right one.
+
+Other routes (`provision_pc.py`, Flatpak, many PCs, and updating PCs) are in
 [docs/office-pc-setup.md](docs/office-pc-setup.md).
 
 ---
@@ -272,7 +320,7 @@ All settings are environment variables in `gateway/.env`.
 | --- | --- | --- | --- |
 | `OPENROUTER_API_KEY` | one of the two | — | Serves model ids with a vendor prefix, e.g. `deepseek/deepseek-v4.1-flash-1017`. |
 | `MISTRAL_API_KEY` | one of the two | — | Serves bare Mistral ids, e.g. `mistral-large-latest`. |
-| `LIBRETHINKERAGENT_ADMIN_TOKEN` | yes | — | Protects `/admin/*` and the dashboard's data calls. |
+| `LIBRETHINKERAGENT_ADMIN_TOKEN` | yes | — | Protects `/admin/*` and the dashboard's data calls. At least 16 random characters; the gateway refuses to start with the placeholder. |
 | `LIBRETHINKERAGENT_DEFAULT_MODEL` | no | `deepseek/deepseek-v4.1-flash-1017` | Model used when a request names none, and the model new PCs are set to. |
 | `LIBRETHINKERAGENT_ALLOWED_MODELS` | no | default model | Comma-separated allow-list offered to PCs. Models whose provider has no key are dropped at startup. |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter base URL. |
@@ -280,7 +328,9 @@ All settings are environment variables in `gateway/.env`.
 | `LIBRETHINKERAGENT_RETRIES` | no | `2` | Retries for transient upstream failures (dropped connection, 429/502/503/504) before an error reaches the PC. |
 | `LIBRETHINKERAGENT_PRICES` | no | OpenRouter's price list | JSON of USD per million tokens for models without a public price (Mistral direct), e.g. `{"mistral-large-latest":{"in":2,"out":6,"cache_read":0.2}}`. Used for cost when the provider reports none. |
 | `LIBRETHINKERAGENT_TIMEOUT` | no | `300` | Upstream request timeout in seconds. |
-| `LIBRETHINKERAGENT_PUBLIC_URL` | no | from request | Gateway URL embedded in `setup.sh` and `LibreThinkerAgent.oxt`. |
+| `LIBRETHINKERAGENT_PUBLIC_URL` | no (set it on a server) | from request | Gateway URL embedded in `setup.sh` and `LibreThinkerAgent.oxt`. Use the `https://` address when a TLS proxy is in front. |
+| `LIBRETHINKERAGENT_BIND` | no | `0.0.0.0` | Address the published port binds to (read by `docker-compose.yml`). Use `127.0.0.1` behind a proxy on the same host. |
+| `LIBRETHINKERAGENT_MAX_BODY_MB` | no | `20` | Largest request body accepted; bigger ones get HTTP 413. |
 | `LIBRETHINKERAGENT_DB` | no | `/data/librethinkeragent.db` | SQLite path inside the container. |
 | `LIBRETHINKERAGENT_OXT` | no | `/app/vendor/WriterAgent.oxt` | Base extension package the gateway patches into `LibreThinkerAgent.oxt`. |
 
@@ -356,6 +406,7 @@ The admin token is kept in the browser's `localStorage`, so use a trusted machin
   as leaked.
 - Rotate provider keys by editing `gateway/.env` and running `docker compose up -d --force-recreate`.
 - Request logging is metadata only; prompts and document text are not stored.
+- Built-in protections: the admin token is compared in constant time, ten wrong admin logins from one address block that address for five minutes (HTTP 429), request bodies over 20 MB are refused, and every response carries `nosniff`, `X-Frame-Options: DENY` and `no-referrer` headers (dashboard pages are also `no-store`).
 - **Document content still goes to the model provider** (OpenRouter and the host it routes to, or
   Mistral). The gateway protects the key, not the content. Confirm company policy allows this. To
   keep content on the LAN, point `MISTRAL_BASE_URL` at a locally hosted OpenAI-compatible model.
@@ -372,8 +423,15 @@ firewall.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `unsatisfied dependencies … dp_package.cxx:614` on install | LibreOffice older than 24.8. Upgrade (see [Requirements](#requirements)). |
+| `unsatisfied dependencies … dp_package.cxx:614` on install, or `setup.sh` says "LibreOffice too old" | LibreOffice older than 24.8. `setup.sh` upgrades it on Ubuntu-based systems; elsewhere, or with `LTA_NO_UPGRADE=1`, upgrade by hand (see [Requirements](#requirements)). |
 | `std::bad_alloc` on install | A conda or pyenv Python on `PATH`. Use `setup.sh`, or `PATH=/usr/bin:/bin unopkg add -f LibreThinkerAgent.oxt`. |
+| `service com.sun.star.loader.Python cannot be instantiated` | LibreOffice has no working Python component: `python3-uno` is missing or from a different build than LibreOffice. `setup.sh` installs the `python3-uno` that matches LibreOffice exactly (it never downgrades LibreOffice). Manual fix: `sudo apt install python3-uno`. The old message "LibreOffice 24.8 or newer is required" for this error was misleading. |
+| `setup.sh` finishes, but LibreOffice shows no agent | A second LibreOffice (App Center Snap or Flatpak) opens from the menu and does not have the agent; `setup.sh` warns about it. Remove it (`sudo snap remove libreoffice`), or start `/usr/lib/libreoffice/program/soffice`. |
+| Writer and Calc greyed out in the Start Center | Only the LibreOffice base package is installed. Re-run `setup.sh`, or `sudo apt install libreoffice`. |
+| LibreOffice looks dated (old icons and widgets) | The desktop look packages are missing. `setup.sh` installs them; manually: `sudo apt install libreoffice-gtk3 libreoffice-gnome libreoffice-style-yaru`. |
+| `setup.sh` says Ubuntu is end-of-life | The PC runs an unsupported Ubuntu (for example 24.10) whose package servers are gone, so nothing can be installed. Move it to an LTS release (24.04 or 26.04). `LTA_USE_OLD_RELEASES=1` lets the script point apt at `old-releases.ubuntu.com` instead. |
+| `curl: (23) … ERROR on write` | Older `setup.sh` with a Snap `curl`. Use the current script from the gateway. |
+| `apt` errors about another package (e.g. `mysql-server`) during `setup.sh` | An unrelated half-installed package on the PC. `setup.sh` checks LibreOffice by what is installed, so it still finishes; fix the other package separately. |
 | `unopkg add` fails while LibreOffice is open | Quit LibreOffice fully (`pkill -f soffice.bin`) and retry. |
 | Extension installed, but the sidebar does nothing | LibreOffice was started from a conda-activated terminal. Start it from the application menu. |
 | No requests from a PC in the dashboard log | The PC is not using the gateway: its `endpoint` in `writeragent.json` points straight at a provider. Run **Tools → Libre Thinker Agent: Enter access token…** again. |

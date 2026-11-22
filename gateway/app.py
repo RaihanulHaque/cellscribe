@@ -9,6 +9,7 @@ token that the gateway validates before proxying the request upstream.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import os
 import re
@@ -55,12 +56,8 @@ def provider_for(model: str) -> str:
 
 PROVIDERS = _provider_table()
 def _env(name: str, default: str = "") -> str:
-    """LIBRETHINKERAGENT_<name>, falling back to the older LIBRETHINKER_<name> and CELLSCRIBE_<name> so existing .env files keep working."""
-    for prefix in ("LIBRETHINKERAGENT_", "LIBRETHINKER_", "CELLSCRIBE_"):
-        value = os.environ.get(prefix + name)
-        if value is not None:
-            return value
-    return default
+    """The LIBRETHINKERAGENT_<name> setting, or *default* when it is not set."""
+    return os.environ.get("LIBRETHINKERAGENT_" + name, default)
 
 
 DEFAULT_MODEL = _env("DEFAULT_MODEL", "deepseek/deepseek-v4.1-flash-1017")
@@ -206,6 +203,8 @@ async def startup() -> None:
         print(f"librethinkeragent: no provider key for {', '.join(DROPPED_MODELS)}; not offering them", flush=True)
     if not ADMIN_TOKEN:
         raise RuntimeError("LIBRETHINKERAGENT_ADMIN_TOKEN is required")
+    if ADMIN_TOKEN == "replace-with-a-random-admin-token" or len(ADMIN_TOKEN) < 16:
+        raise RuntimeError("LIBRETHINKERAGENT_ADMIN_TOKEN must be a random string of at least 16 characters")
     store.configure(DB_PATH)
     client = httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=10.0))
     PRICES.update(_load_price_overrides())
@@ -218,6 +217,52 @@ async def shutdown() -> None:
         await client.aclose()
 
 
+# Requests larger than this are refused before they are read (chat requests are far smaller).
+MAX_BODY_BYTES = int(float(_env("MAX_BODY_MB", "20")) * 1024 * 1024)
+
+
+class _Guard:
+    """Refuse oversized bodies and add basic security headers to every response."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        length = dict(scope["headers"]).get(b"content-length", b"")
+        if length.isdigit() and int(length) > MAX_BODY_BYTES:
+            response = JSONResponse(
+                {"error": {"message": "Request too large", "type": "gateway_error"}}, status_code=413
+            )
+            await response(scope, receive, send)
+            return
+        path = scope["path"]
+        no_store = path == "/" or path.startswith(("/admin", "/requests", "/revoked"))
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                if no_store:  # dashboard and admin responses must never be cached, whatever the file server said
+                    headers = [h for h in headers if h[0].lower() != b"cache-control"]
+                present = {k.lower() for k, _ in headers}
+                extra = [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"no-referrer"),
+                ]
+                if no_store:
+                    extra.append((b"cache-control", b"no-store"))
+                message["headers"] = headers + [h for h in extra if h[0] not in present]
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(_Guard)
+
+
 @app.exception_handler(HTTPException)
 async def _http_error(request: Request, exc: HTTPException) -> JSONResponse:
     """Return errors in the OpenAI shape so clients surface a readable message."""
@@ -227,9 +272,24 @@ async def _http_error(request: Request, exc: HTTPException) -> JSONResponse:
     )
 
 
-def _require_admin(x_admin_token: str = Header(default="")) -> None:
-    if not ADMIN_TOKEN or x_admin_token != ADMIN_TOKEN:
+# Failed admin logins per client address: a few typos are fine, a guessing run is not.
+_ADMIN_FAILS: dict[str, list[float]] = {}
+_ADMIN_FAIL_LIMIT = 10
+_ADMIN_FAIL_WINDOW = 300.0
+
+
+def _require_admin(request: Request, x_admin_token: str = Header(default="")) -> None:
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    fails = [t for t in _ADMIN_FAILS.get(ip, []) if now - t < _ADMIN_FAIL_WINDOW]
+    if len(fails) >= _ADMIN_FAIL_LIMIT:
+        _ADMIN_FAILS[ip] = fails
+        raise HTTPException(status_code=429, detail="Too many failed admin logins; try again in a few minutes")
+    if not ADMIN_TOKEN or not hmac.compare_digest(x_admin_token.encode(), ADMIN_TOKEN.encode()):
+        fails.append(now)
+        _ADMIN_FAILS[ip] = fails
         raise HTTPException(status_code=401, detail="Invalid admin token")
+    _ADMIN_FAILS.pop(ip, None)
 
 
 def _require_device(authorization: str = Header(default="")) -> dict[str, Any]:
@@ -345,102 +405,9 @@ def _page(name: str) -> Any:
     return FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
-SETUP_TEMPLATE = r'''#!/usr/bin/env bash
-# Libre Thinker Agent PC setup - generated by the gateway for one device.
-set -euo pipefail
-
-GATEWAY=__GATEWAY__
-TOKEN=__TOKEN__
-MODEL=__MODEL__
-
-command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
-if ! command -v unopkg >/dev/null; then
-  echo "unopkg not found: install LibreOffice 24.8 or newer" >&2
-  if command -v flatpak >/dev/null && flatpak info org.libreoffice.LibreOffice >/dev/null 2>&1; then
-    echo "Flatpak LibreOffice found; install the extension by hand instead:" >&2
-    echo "  flatpak run --command=unopkg org.libreoffice.LibreOffice add <LibreThinkerAgent.oxt>" >&2
-    echo "  then run provision/provision_pc.py with --gateway and --token" >&2
-  fi
-  exit 1
-fi
-
-# A conda/mamba environment on PATH breaks LibreOffice's Python loader: unopkg
-# then mixes conda's stdlib with the system libpython and dies with
-# "std::bad_alloc", even though LibreOffice itself works fine. Put the system
-# directories first, drop conda entries, and clear Python overrides.
-clean_path=$(printf '%s' "${PATH:-}" | tr ':' '\n' \
-  | grep -v -E '/(ana|mini)conda[0-9]*/|/(mini|mamba)forge[0-9]*/|/condabin(/|$)' \
-  | paste -sd: - || true)
-PATH="/usr/local/bin:/usr/bin:/bin${clean_path:+:$clean_path}"
-unset PYTHONHOME PYTHONPATH CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PYTHON_EXE || true
-export PATH
-
-if command -v pgrep >/dev/null && pgrep -x soffice.bin >/dev/null; then
-  echo "Close LibreOffice first, then re-run." >&2; exit 1
-fi
-
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-echo "Downloading WriterAgent extension..."
-curl -fsSL -H "Authorization: Bearer $TOKEN" "$GATEWAY/setup/LibreThinkerAgent.oxt" -o "$tmp/LibreThinkerAgent.oxt"
-# Install the extension, retrying once if a stale lock blocks LibreOffice.
-install_oxt() {
-  unopkg remove org.extension.writeragent >/dev/null 2>&1 || true
-  unopkg add -f "$tmp/LibreThinkerAgent.oxt" 2>&1
-}
-
-add_out=$(install_oxt) && add_ok=1 || add_ok=0
-if [ "$add_ok" = 0 ]; then
-  case "$add_out" in
-    *"lock file"*)
-      # No LibreOffice is running (checked above), so the lock is stale: an
-      # earlier session was killed and never removed it. Clear it and retry.
-      echo "Removing a stale LibreOffice lock left by an earlier session..."
-      rm -f "$HOME"/.config/libreoffice/*/.lock 2>/dev/null || true
-      add_out=$(install_oxt) && add_ok=1 || add_ok=0 ;;
-  esac
-fi
-if [ "$add_ok" = 0 ]; then
-  printf '%s\n' "$add_out" >&2
-  case "$add_out" in
-    *bad_alloc*|*Bad_alloc*)
-      echo "hint: LibreOffice's Python loader could not start. That is usually a" >&2
-      echo "      second Python (conda, pyenv, or PYTHONHOME) visible to the shell," >&2
-      echo "      not an outdated LibreOffice. Try: PATH=/usr/bin:/bin bash setup.sh" >&2 ;;
-  esac
-  echo "unopkg add failed. LibreOffice 24.8 or newer is required." >&2
-  exit 1
-fi
-if list_out=$(unopkg list 2>&1); then
-  case "$list_out" in
-    *org.extension.writeragent*) echo "Extension installed and registered." ;;
-    *) echo "warning: extension installed but not listed as registered." >&2 ;;
-  esac
-fi
-
-# The profile only exists after LibreOffice (or unopkg) has run once.
-profile=$(ls -dt "$HOME"/.config/libreoffice/*/user 2>/dev/null | head -n1 || true)
-[ -n "$profile" ] || { echo "No LibreOffice profile found; start LibreOffice once and re-run." >&2; exit 1; }
-mkdir -p "$profile/config"
-cfg="$profile/config/writeragent.json"
-
-new=$(cat <<JSON
-{"endpoint": "$GATEWAY", "text_model": "$MODEL", "model": "$MODEL",
- "api_keys_by_endpoint": {"$GATEWAY": "$TOKEN"},
- "enable_agent_log": true, "request_timeout": 300}
-JSON
-)
-if [ -f "$cfg" ]; then
-  cp -p "$cfg" "$cfg.bak.$(date +%s)"
-  if command -v jq >/dev/null && grep -v '^[[:space:]]*//' "$cfg" | jq -e . >/dev/null 2>&1; then
-    new=$(grep -v '^[[:space:]]*//' "$cfg" | jq --argjson n "$new" '. * $n')
-  fi
-fi
-umask 077
-printf '%s\n' "$new" > "$cfg"
-chmod 600 "$cfg"
-echo "Done. Configured $cfg"
-echo "Open LibreOffice and try =PROMPT(\"hello\") in Calc."
-'''
+# The PC installer lives in setup-pc.sh (also usable standalone); /setup.sh
+# serves it with this device's gateway URL, token and model filled in.
+SETUP_SCRIPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup-pc.sh")
 
 
 def _public_base(request: Request) -> str:
@@ -482,8 +449,10 @@ async def setup_oxt(request: Request) -> Response:
 async def setup_script(request: Request, device: dict[str, Any] = Depends(_require_device)) -> PlainTextResponse:
     """Self-contained installer for one device: curl -H 'Authorization: Bearer TOKEN' URL | bash."""
     base, token, model = _setup_params(request, device)
+    with open(SETUP_SCRIPT_PATH, encoding="utf-8") as handle:
+        template = handle.read()
     script = (
-        SETUP_TEMPLATE.replace("__GATEWAY__", shlex.quote(base))
+        template.replace("__GATEWAY__", shlex.quote(base))
         .replace("__TOKEN__", shlex.quote(token))
         .replace("__MODEL__", shlex.quote(model))
     )

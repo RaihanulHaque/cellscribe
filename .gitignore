@@ -11,8 +11,9 @@ venv/
 # LibreOffice profile copies must never be committed
 **/libreoffice/*/user/
 
-# Built extension downloaded from the gateway for local install
-/LibreThinkerAgent.oxt
+# Built extensions downloaded from the gateway for local install, and database backups
+/*.oxt
+/gateway/backups/
 
 # LibreOffice document lock files
 .~lock.*#

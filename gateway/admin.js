@@ -1,13 +1,15 @@
 // Shared helpers for the Libre Thinker Agent admin pages.
 const $ = (id) => document.getElementById(id);
 let adminToken = "";
-try { adminToken = localStorage.getItem("csAdminToken") || ""; } catch (e) { /* storage blocked */ }
+let tokenRejected = false;  // stop live polling after a rejected token so it cannot trip the login limiter
+try { adminToken = localStorage.getItem("ltaAdminToken") || ""; } catch (e) { /* storage blocked */ }
 
 async function api(path, options = {}) {
   const res = await fetch(path, Object.assign({}, options, {
     headers: Object.assign({ "X-Admin-Token": adminToken }, options.headers || {}),
   }));
-  if (res.status === 401) throw new Error("Admin token rejected");
+  if (res.status === 401) { tokenRejected = true; throw new Error("Admin token rejected"); }
+  if (res.status === 429) { tokenRejected = true; throw new Error("Too many failed logins; wait a few minutes"); }
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.json();
 }
@@ -102,7 +104,8 @@ function renderHeader(active) {
   $("adminToken").value = adminToken;
   $("saveToken").onclick = () => {
     adminToken = $("adminToken").value.trim();
-    try { localStorage.setItem("csAdminToken", adminToken); } catch (e) { /* ignore */ }
+    tokenRejected = false;
+    try { localStorage.setItem("ltaAdminToken", adminToken); } catch (e) { /* ignore */ }
     window.refreshAll();
   };
   $("adminToken").addEventListener("keydown", (e) => { if (e.key === "Enter") $("saveToken").click(); });
@@ -111,16 +114,16 @@ function renderHeader(active) {
 // Calls refresh() now and then on a timer while the tab is visible.
 function startLive(refresh, intervalMs) {
   let on = true;
-  try { on = localStorage.getItem("csLive") !== "off"; } catch (e) { /* ignore */ }
+  try { on = localStorage.getItem("ltaLive") !== "off"; } catch (e) { /* ignore */ }
   const paint = () => { $("liveToggle").classList.toggle("on", on); $("liveText").textContent = on ? "Live" : "Paused"; };
   $("liveToggle").onclick = () => {
     on = !on;
-    try { localStorage.setItem("csLive", on ? "on" : "off"); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("ltaLive", on ? "on" : "off"); } catch (e) { /* ignore */ }
     paint();
     if (on) refresh();
   };
   paint();
-  setInterval(() => { if (on && !document.hidden && adminToken) refresh(); }, intervalMs);
+  setInterval(() => { if (on && !document.hidden && adminToken && !tokenRejected) refresh(); }, intervalMs);
 }
 
 function setAuth(ok, message) {

@@ -25,9 +25,40 @@ The dashboard shows this command next to each new token:
 curl -fsSL -H "Authorization: Bearer lta_..." http://<gateway-ip>:8080/setup.sh | bash
 ```
 
-The script is generated for that device. It downloads `LibreThinkerAgent.oxt`, installs it with `unopkg`
-(clearing conda from `PATH` and a stale lock if needed), and writes `writeragent.json`, merging with
-`jq` when available and otherwise backing up and replacing the file. It writes the gateway's
+The script is `gateway/setup-pc.sh` with that device's gateway URL, token and model filled in. The same
+file also runs standalone (copy it to the PC, e.g. by USB):
+
+```bash
+bash setup-pc.sh http://<gateway-ip>:8080 lta_... [model]
+```
+
+Close LibreOffice before running it (it offers to force-close it). Steps:
+
+1. Checks the gateway and the token.
+2. On Ubuntu and Ubuntu-based systems (Linux Mint, Zorin, Pop!_OS, elementary), makes the system
+   LibreOffice complete: version 24.8 or newer, Writer, Calc, the `python3-uno` that matches LibreOffice
+   exactly (without it: `com.sun.star.loader.Python cannot be instantiated`), and the desktop look
+   packages (`libreoffice-gtk3`, `libreoffice-style-yaru`, and `libreoffice-gnome` on GNOME).
+   - LibreOffice older than 24.8 is upgraded from the official LibreOffice PPA. On derivatives whose
+     codename the PPA does not know (Linux Mint), it adds the PPA for the Ubuntu base release
+     (`UBUNTU_CODENAME`) as `/etc/apt/sources.list.d/libreoffice-ppa-lta.sources`.
+     `LTA_NO_UPGRADE=1` turns the upgrade off.
+   - Large upgrades can stop halfway because of apt's ordering; the script runs `apt-get -f install`
+     and a second pass. Success is judged by the installed packages, not apt's exit code, so an
+     unrelated broken package (for example a half-installed `mysql-server`) does not stop it.
+   - LibreOffice is never downgraded. Apt sources are only changed for the PPA, and on an end-of-life
+     Ubuntu only with `LTA_USE_OLD_RELEASES=1` (switching to `old-releases.ubuntu.com`, with
+     `*.lta-bak` backups).
+   - Other systems: uses an `/opt` official build, Flatpak or Snap LibreOffice if present (Snap through
+     LibreOffice's own Extension Manager dialog).
+3. Downloads `LibreThinkerAgent.oxt` (written by the shell, so a Snap `curl` works too), installs it
+   with `unopkg` (clearing conda from `PATH` and a stale lock if needed), and writes
+   `writeragent.json`, merging with the existing file when possible.
+4. Warns when a second LibreOffice (App Center Snap or Flatpak) is installed. That copy does not have
+   the agent; if the menu opens it, the agent seems missing. Remove it (`sudo snap remove libreoffice`).
+
+Running it on a PC that is already complete takes a few seconds and needs no password; an upgrade
+from LibreOffice 24.2 takes about 10 minutes. It is safe to re-run. It writes the gateway's
 default model; add `?model=<id>` to the URL to choose another. Set `LIBRETHINKERAGENT_PUBLIC_URL` if PCs
 reach the gateway under a different address than the one in the request.
 
@@ -73,30 +104,6 @@ python3 provision/provision_pc.py \
 When the gateway is rebuilt with a new `LibreThinkerAgent.oxt`, reinstall it on each PC with LibreOffice
 closed (`unopkg add -f LibreThinkerAgent.oxt`, or Option A again). The token and settings are kept.
 
-### Upgrading a gateway that ran under an earlier name
-
-Earlier builds were called CellScribe, Libre Agent and Libre Thinker. On an existing server:
-
-1. **Settings.** Rename `CELLSCRIBE_*` or `LIBRETHINKER_*` to `LIBRETHINKERAGENT_*` in `gateway/.env`.
-   The old names are still read as a fallback (the new names win), so this can wait.
-2. **Data.** The compose volume is now `gateway_librethinkeragent-data` (it was
-   `gateway_librethinker-data`, and `gateway_cellscribe-data` before that). Copy the data across once,
-   with the old container stopped:
-
-   ```bash
-   docker rm -f librethinker-gateway        # or cellscribe-gateway
-   cd gateway && docker compose create --build
-   docker run --rm -v gateway_librethinker-data:/old:ro -v gateway_librethinkeragent-data:/new      python:3.12-slim sh -c 'cp -a /old/. /new/'
-   docker compose up -d
-   ```
-
-   The gateway renames a copied `librethinker.db` or `cellscribe.db` to `librethinkeragent.db` on
-   start, so devices, tokens and request history carry over. Keep the old volume until you have
-   checked the dashboard.
-3. **PCs.** Reinstall `LibreThinkerAgent.oxt` on each PC. Existing device tokens (`cs_…`, `lt_…`) keep
-   working; new tokens start with `lta_`. Setup scripts generated before the rename point at a
-   download URL that no longer exists, so generate a new one from the dashboard.
-
 ## LibreOffice version and Python on the PC
 
 ### LibreOffice 24.8 is mandatory
@@ -109,13 +116,17 @@ ERROR: Exception occurred: unsatisfied dependencies at ./desktop/source/deployme
 ERROR: unopkg failed.
 ```
 
-Check each PC with `libreoffice --version`. On Ubuntu 24.04, upgrade through the LibreOffice PPA:
+Check each PC with `libreoffice --version`. `setup.sh` (Option B) upgrades it automatically on Ubuntu
+and Ubuntu-based systems. To do it by hand on Ubuntu 24.04:
 
 ```bash
 sudo add-apt-repository ppa:libreoffice/ppa
 sudo apt update
-sudo apt install libreoffice
+sudo apt install libreoffice python3-uno libreoffice-gtk3 libreoffice-gnome libreoffice-style-yaru
 ```
+
+If apt stops halfway with `dependency problems - leaving unconfigured`, run `sudo apt -f install`
+and the install command again.
 
 Do not patch the package to lower the version requirement.
 

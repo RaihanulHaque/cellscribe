@@ -3,10 +3,15 @@ services:
     build: .
     container_name: librethinkeragent-gateway
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file:
       - .env
     ports:
-      - "8080:8080"
+      - "${LIBRETHINKERAGENT_BIND:-0.0.0.0}:8080:8080"
     volumes:
       - librethinkeragent-data:/data
       - ../vendor:/app/vendor:ro
