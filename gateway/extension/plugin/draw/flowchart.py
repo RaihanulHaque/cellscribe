@@ -21,7 +21,10 @@ from plugin.framework.tool import ToolBase, ToolContext
 log = logging.getLogger(__name__)
 
 _DRAW_UNO = ["com.sun.star.drawing.DrawingDocument", "com.sun.star.presentation.PresentationDocument"]
-_COLOR_HELP = "Optional highlight: " + ", ".join(core.COLORS) + ", or #RRGGBB. Omit for the house style."
+_COLOR_HELP = (
+    "Only when the user asks for a colour or a highlight: " + ", ".join(core.COLORS) + ", or #RRGGBB. "
+    "Otherwise omit it: the house style already colours steps, decisions and start/end consistently."
+)
 
 
 class DrawFlowchart(ToolBase):

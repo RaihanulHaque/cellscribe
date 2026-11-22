@@ -628,6 +628,14 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     ],
     # --- Calc prompt: answer from the data, batch edits, ordinary formulas -----
     "plugin/framework/prompts.py": [
+        # --- Short, skimmable sidebar replies ------------------------------
+        (
+            'The sidebar renders HTML natively."""\n',
+            'The sidebar renders HTML natively. '
+            "Keep replies short and skimmable, like a chat app: lead with the answer or what you did in 1-3 short sentences; "
+            "use a short list only when it helps; no long explanations, apologies or option essays unless the user asks for detail. "
+            "When something is not possible, say so in one sentence and offer the best alternative.\"\"\"\n",
+        ),
         # --- Draw: flowcharts in one call (plugin/draw/flowchart.py) ----------
         # WriterAgent told the model to build flowcharts shape by shape through
         # the nested shapes agent: slow (the "Hung: ... draw_toolset" status),
@@ -642,6 +650,7 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         (
             "3. Use the specialized delegation tool to perform shape operations (create, edit, group, paper-form fill via fill_draw_fields), transitions, masters, notes, or charts.\n",
             "3. Flowcharts and process diagrams: draw_flowchart (one call), then flowchart_update_step for single-step changes. "
+            "Page orientation or paper size (landscape, A3, Letter...): set_page_format. "
             "Other shape operations (create, edit, group, paper-form fill via fill_draw_fields), transitions, masters, notes, or charts: the specialized delegation tool.\n",
         ),
         (
@@ -749,6 +758,21 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
         ),
     ],
     "plugin/chatbot/rich_text_paste.py": [
+        # --- Modern chat look (plugin/chatbot/lta_style.py) ----------------
+        # Speaker labels are "You" / "Libre Thinker Agent" on their own line.
+        (
+            'def _role_from_portion_text(text: str) -> str | None:\n    stripped = (text or "").strip()\n',
+            'def _role_from_portion_text(text: str) -> str | None:\n    stripped = (text or "").strip()\n'
+            '    from plugin.chatbot.lta_style import role_of_label as _lta_role\n'
+            '    if _lta_role(stripped) is not None:\n'
+            '        return _lta_role(stripped)\n',
+        ),
+        # Text had a background colour equal to the chat background; on tight
+        # lines each band painted over the line above (a "line through text").
+        (
+            '    if bg_color is not None:\n        dest_cursor.CharBackColor = bg_color\n',
+            '    if bg_color is not None:\n        dest_cursor.CharBackTransparent = True  # Libre Thinker Agent: no text background bands\n',
+        ),
         (  # a turn that only calls a tool is already shown by its progress line
             '            elif msg.get("tool_calls"):\n'
             '                text += "\\n%s [Thinking...]" % _("Assistant:")\n',
@@ -816,6 +840,13 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
     "Dialogs/ChatPanelDialog.xdl": [
         (old_new)
         for old_new in _XDL_MOVES
+    ] + [
+        # Status is a plain line of text, not a boxed text field.
+        (
+            '<dlg:textfield dlg:id="status" dlg:left="4" dlg:top="128" dlg:width="142" dlg:height="10" dlg:value="" dlg:readonly="true" dlg:border="none" dlg:tabstop="false"/>',
+            '<dlg:text dlg:id="status" dlg:left="4" dlg:top="128" dlg:width="142" dlg:height="10" dlg:value="" dlg:align="left"/>',
+        ),
+        ('dlg:value="Ask / instruct:"', 'dlg:value="Message"'),
     ],
     "registry/org/openoffice/Office/UI/Sidebar.xcu": [
         (
@@ -890,6 +921,59 @@ PATCHES: dict[str, list[tuple[str, str]]] = {
             '<dlg:textfield dlg:id="chat_max_tokens" dlg:page="1"',
             '<dlg:textfield dlg:help-text="' + _REPLY_LIMIT_HELP + '" dlg:id="chat_max_tokens" dlg:page="1"',
         ),
+    ],
+    # --- Modern chat look ----------------------------------------------------
+    "plugin/chatbot/rich_text.py": [
+        (
+            'def _role_prefix(role: str) -> str:\n    if role == "user":\n        return "You: "\n    return _("Assistant:") + " "\n',
+            'def _role_prefix(role: str) -> str:\n'
+            '    from plugin.chatbot.lta_style import label_for\n'
+            '    return label_for(role) + "\\n"  # Libre Thinker Agent: speaker label on its own line\n',
+        ),
+        (
+            '    labels = ("You:",) if role == "user" else (_("Assistant:"), "Assistant:")\n',
+            '    labels = ("You", "You:") if role == "user" else ("Libre Thinker Agent", _("Assistant:"), "Assistant:")\n',
+        ),
+    ],
+    "plugin/chatbot/rich_text_control.py": [
+        (  # every formatted paint ends here
+            "        self._formatted_rows = len(items)\n        self._formatted_len = length\n",
+            "        self._formatted_rows = len(items)\n        self._formatted_len = length\n"
+            "        from plugin.chatbot.lta_style import polish_transcript\n"
+            "        polish_transcript(self.control)\n"
+            "        if items:  # spacing made the text taller: show the newest message again\n"
+            "            _scroll_rich_to_tail(self.control, restore_focus=self.restore_focus)\n",
+        ),
+        (  # streaming: style only the new tail
+            "        self._shown = list(items)\n\n    def _append_to_plain_tail(",
+            "        self._shown = list(items)\n"
+            "        from plugin.chatbot.lta_style import polish_transcript\n"
+            "        polish_transcript(self.control, tail=60)\n\n    def _append_to_plain_tail(",
+        ),
+        (
+            "        self._shown = list(items)\n\n    def stream_session(",
+            "        self._shown = list(items)\n"
+            "        from plugin.chatbot.lta_style import polish_transcript\n"
+            "        polish_transcript(self.control, tail=60)\n\n    def stream_session(",
+        ),
+        (
+            "    for name, val in _RICH_CONTROL_FIELD_FLAGS:\n        _set_model_property(model, name, val)\n",
+            "    for name, val in _RICH_CONTROL_FIELD_FLAGS:\n        _set_model_property(model, name, val)\n"
+            "    from plugin.chatbot.lta_style import subtle_border\n"
+            "    subtle_border(model, theme.bg_color)\n",
+        ),
+    ],
+    # Light theme: the chat surface is the normal field colour (white), not
+    # the dialog colour darkened by 6% (a flat grey box).
+    "plugin/framework/appearance.py": [
+        ("        return False, _darken(dialog_color, 0.94)\n", "        return False, field_color  # Libre Thinker Agent: clean chat surface\n"),
+    ],
+    # The mode dropdown is hidden, so the first-open "Librarian" onboarding
+    # (asks your name and favourite colours) would capture a new user's first
+    # question. Always start in Chat.
+    "plugin/chatbot/chat_sidebar_mode.py": [
+        ("        return CHAT_MODE_CHAT\n    return CHAT_MODE_LIBRARIAN\n", "        return CHAT_MODE_CHAT\n    return CHAT_MODE_CHAT  # Libre Thinker Agent: no first-run Librarian\n"),
+        ("I'm the WriterAgent Librarian", "I'm the Libre Thinker Agent Librarian"),
     ],
     # --- Remaining visible "WriterAgent" labels --------------------------------
     "Addons.xcu": [
