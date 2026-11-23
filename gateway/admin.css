@@ -93,3 +93,22 @@ details > summary { cursor: pointer; font-weight: 600; }
 #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 8px; display: none; z-index: 9; }
 
 #logs td { padding: 4px 8px; }
+
+/* Conversation viewer and log files */
+a.btnlink { display: inline-block; padding: 3px 10px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; font-weight: 600; }
+a.btnlink:hover { background: var(--accent-soft); text-decoration: none; }
+.meta { display: flex; gap: 22px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.meta b { display: block; color: var(--text); font-size: 13px; font-weight: 600; }
+.msgs { display: flex; flex-direction: column; gap: 10px; }
+.msg { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.msg.user { border-left-color: #5b7fd6; }
+.msg.assistant { border-left-color: var(--accent); }
+.msg.tool { border-left-color: var(--warn); }
+.msg.reply { border: 2px solid var(--accent); border-left-width: 4px; }
+.msg .who { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
+.msg .body { white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.msg pre, .call pre { margin: 6px 0 0; padding: 8px 10px; background: var(--bg); border-radius: 6px; overflow-x: auto; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; max-height: 420px; }
+.call { margin-top: 8px; border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
+.call .fn { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; font-weight: 700; color: var(--accent); }
+.msg details > summary { font-weight: 500; font-size: 12px; color: var(--muted); }
+.notice { padding: 10px 14px; border-radius: 8px; background: var(--accent-soft); font-size: 13px; }

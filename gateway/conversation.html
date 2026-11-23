@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversation - Libre Thinker Agent Gateway</title>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+<link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+<header class="top" id="top"></header>
+<main>
+  <section>
+    <div class="row" style="margin-bottom:10px">
+      <a href="/requests">&larr; All requests</a>
+      <span class="spacer"></span>
+      <button id="prev" class="small" title="Earlier request from the same PC">&larr; Earlier</button>
+      <button id="next" class="small" title="Later request from the same PC">Later &rarr;</button>
+      <button id="dl" class="small">Download JSON</button>
+    </div>
+    <div class="card" id="summary"><span class="muted">Connect with the admin token.</span></div>
+  </section>
+  <section>
+    <h2>Conversation sent to the model</h2>
+    <div class="msgs" id="msgs"></div>
+  </section>
+  <section>
+    <h2>Model reply <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">what this request returned</span></h2>
+    <div class="msgs" id="reply"></div>
+  </section>
+  <section>
+    <details class="card" id="toolsBox"><summary>Tools offered to the model</summary><div id="tools" style="margin-top:8px"></div></details>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/assets/admin.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+let current = null;
+
+function text(content) {
+  if (content === null || content === undefined) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((p) => p.text ?? (p.type ? "[" + p.type + "]" : JSON.stringify(p))).join("\n");
+  return JSON.stringify(content, null, 2);
+}
+
+function pretty(args) {
+  try { return JSON.stringify(JSON.parse(args), null, 2); } catch (e) { return String(args ?? ""); }
+}
+
+// Long text (document context) folds after a preview.
+function body(t, foldAt) {
+  if (!t) return '<div class="body muted">(empty)</div>';
+  if (t.length <= foldAt) return '<div class="body">' + escapeHtml(t) + "</div>";
+  return '<div class="body">' + escapeHtml(t.slice(0, Math.min(600, foldAt))) + '…</div><details><summary>Show all ' +
+    t.length.toLocaleString() + ' characters</summary><pre>' + escapeHtml(t) + "</pre></details>";
+}
+
+function calls(list) {
+  return (list || []).map((c) => '<div class="call"><span class="fn">' + escapeHtml(c.function?.name || "?") + "</span>" +
+    (c.id ? ' <span class="muted mono">' + escapeHtml(c.id) + "</span>" : "") +
+    "<pre>" + escapeHtml(pretty(c.function?.arguments)) + "</pre></div>").join("");
+}
+
+function message(m, isReply) {
+  const role = m.role || "assistant";
+  const label = { system: "System instructions", user: "User", assistant: "Assistant", tool: "Tool result" }[role] || role;
+  let html = '<div class="msg ' + escapeHtml(role) + (isReply ? " reply" : "") + '"><div class="who">' + label;
+  if (role === "tool" && (m.name || m.tool_call_id)) html += ' <span class="mono" style="text-transform:none">' + escapeHtml(m.name || m.tool_call_id) + "</span>";
+  html += "</div>";
+  const t = text(m.content);
+  if (role === "system") html += "<details><summary>" + t.length.toLocaleString() + " characters</summary><pre>" + escapeHtml(t) + "</pre></details>";
+  else if (role === "tool") html += body(t, 700);
+  else if (t || !(m.tool_calls || []).length) html += body(t, role === "user" ? 2500 : 8000);
+  html += calls(m.tool_calls);
+  if (m.reasoning) html += "<details style='margin-top:6px'><summary>Model's reasoning (" + m.reasoning.length.toLocaleString() + " characters)</summary><pre>" + escapeHtml(m.reasoning) + "</pre></details>";
+  return html + "</div>";
+}
+
+function render(data) {
+  const r = data.request, t = data.transcript, u = t.usage || {};
+  const bad = r.status >= 400;
+  const meta = [
+    ["Time", fmtTime(r.ts)], ["PC", r.device_name], ["Model", r.model],
+    ["Status", r.status], ["Latency", (r.latency_ms / 1000).toFixed(1) + " s"], ["Mode", r.stream ? "streamed" : "single reply"],
+    ["Tokens in / out", num(r.prompt_tokens) + " / " + num(r.completion_tokens)], ["Cost", money(r.cost)],
+    ["Finish", t.response?.finish_reason || "—"],
+  ];
+  $("summary").innerHTML = '<div class="meta">' + meta.map((m) => "<div>" + m[0] + "<b" + (m[0] === "Status" && bad ? ' class="err"' : "") + ">" +
+    escapeHtml(m[1]) + "</b></div>").join("") + "</div>" + (r.error ? '<div class="err" style="margin-top:8px">' + escapeHtml(r.error) + "</div>" : "");
+  const msgs = t.request?.messages || [];
+  $("msgs").innerHTML = msgs.length ? msgs.map((m) => message(m, false)).join("") : '<div class="empty">No messages.</div>';
+  const reply = t.response?.message;
+  $("reply").innerHTML = reply ? message(reply, true)
+    : '<div class="empty">' + (t.error ? "No reply: " + escapeHtml(t.error) : "No reply recorded.") + "</div>";
+  const tools = t.request?.tools || [];
+  $("toolsBox").querySelector("summary").textContent = "Tools offered to the model (" + tools.length + ")";
+  $("tools").innerHTML = tools.map((x) => '<div class="call"><span class="fn">' + escapeHtml(x.function?.name) + '</span> <span class="muted">' +
+    escapeHtml(x.function?.description || "") + "</span></div>").join("") || '<span class="muted">None</span>';
+}
+
+async function neighbour(dir) {
+  if (!current) return;
+  const p = new URLSearchParams({ limit: "1", device_id: String(current.request.device_id) });
+  p.set(dir < 0 ? "before_id" : "after_id", String(current.request.id));
+  if (dir > 0) p.set("order", "asc");
+  const rows = await api("/admin/logs?" + p);
+  if (!rows.length) { toast(dir < 0 ? "No earlier request from this PC." : "No later request from this PC."); return; }
+  location.search = "?id=" + rows[0].id;
+}
+
+window.refreshAll = async () => {
+  const id = params.get("id");
+  if (!id) { $("summary").innerHTML = '<span class="muted">Open a request from All requests.</span>'; return; }
+  if (!adminToken) { setAuth(false, "Enter the admin token"); return; }
+  try {
+    const res = await fetch("/admin/requests/" + encodeURIComponent(id) + "/transcript", { headers: { "X-Admin-Token": adminToken } });
+    if (res.status === 401) throw new Error("Admin token rejected");
+    if (!res.ok) { const e = await res.json().catch(() => ({})); $("summary").innerHTML = '<span class="err">' + escapeHtml(e.detail || e.error?.message || ("HTTP " + res.status)) + "</span>"; setAuth(true, "Connected"); return; }
+    current = await res.json();
+    document.title = "Conversation #" + id + " - Libre Thinker Agent Gateway";
+    render(current);
+    setAuth(true, "Connected");
+  } catch (err) { setAuth(false, err.message); }
+};
+
+renderHeader("requests");
+$("liveToggle").style.display = "none";
+$("prev").onclick = () => neighbour(-1);
+$("next").onclick = () => neighbour(1);
+$("dl").onclick = () => {
+  if (!current) return;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(current.transcript, null, 2)], { type: "application/json" }));
+  const a = document.createElement("a"); a.href = url; a.download = "request-" + current.request.id + ".json"; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
+window.refreshAll();
+</script>
+</body>
+</html>

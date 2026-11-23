@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logs - Libre Thinker Agent Gateway</title>
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+<link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+<header class="top" id="top"></header>
+<main>
+  <section>
+    <h2>Conversation logs</h2>
+    <div class="notice" id="state">Connect with the admin token.</div>
+  </section>
+  <section>
+    <h2>Export for fine-tuning</h2>
+    <div class="card">
+      <p style="margin:0 0 10px">Successful requests as <code>{"messages": [...], "tools": [...]}</code> lines: the OpenAI chat format that most
+        fine-tuning tools (OpenAI, Unsloth, Axolotl, TRL) read directly.</p>
+      <div class="row">
+        <label>From <input type="date" id="start"></label>
+        <label>to <input type="date" id="end"></label>
+        <label title="Include the model's hidden reasoning in each reply"><input type="checkbox" id="reasoning"> include reasoning</label>
+        <button class="primary" id="export">Download .jsonl</button>
+      </div>
+    </div>
+  </section>
+  <section>
+    <h2>Daily files <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">raw logs, one JSON object per line; earlier days are gzipped</span></h2>
+    <div class="card tablewrap">
+      <table>
+        <thead><tr><th>Day</th><th>File</th><th class="num">Size</th><th></th></tr></thead>
+        <tbody id="files"><tr><td colspan="4" class="empty">Connect with the admin token.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/assets/admin.js"></script>
+<script>
+window.refreshAll = async () => {
+  if (!adminToken) { setAuth(false, "Enter the admin token"); return; }
+  try {
+    const info = await api("/admin/transcripts");
+    const total = info.files.reduce((a, f) => a + f.bytes, 0);
+    $("state").innerHTML = info.enabled
+      ? "Saving every request in full: the prompt and document context, tool calls and the reply. " +
+        info.files.length + " day(s), " + bytes(total) + " on disk. " +
+        (info.keep_days ? "Days older than " + info.keep_days + " are deleted." : "Kept forever (set LIBRETHINKERAGENT_TRANSCRIPT_DAYS to limit).") +
+        " Format: <code>" + escapeHtml(info.schema) + "</code>."
+      : "Conversation logging is <b>off</b> (LIBRETHINKERAGENT_TRANSCRIPTS=off). Only request metadata is stored.";
+    $("files").innerHTML = info.files.length ? info.files.map((f) =>
+      "<tr><td>" + escapeHtml(f.day) + '</td><td class="mono">' + escapeHtml(f.file) + '</td><td class="num">' + bytes(f.bytes) +
+      '</td><td class="num"><button class="small" data-file="' + escapeHtml(f.file) + '">Download</button></td></tr>').join("")
+      : '<tr><td colspan="4" class="empty">No logs yet.</td></tr>';
+    if (info.files.length && !$("start").value) {
+      $("start").value = info.files[info.files.length - 1].day;
+      $("end").value = info.files[0].day;
+    }
+    setAuth(true, "Connected");
+  } catch (err) { setAuth(false, err.message); }
+};
+
+renderHeader("logs");
+$("liveToggle").style.display = "none";
+$("files").onclick = (e) => {
+  const b = e.target.closest("button[data-file]");
+  if (b) download("/admin/transcripts/file/" + encodeURIComponent(b.dataset.file), b.dataset.file);
+};
+$("export").onclick = () => {
+  const s = $("start").value, en = $("end").value || s;
+  if (!s) { toast("Pick a start day."); return; }
+  const q = new URLSearchParams({ start: s, end: en, reasoning: $("reasoning").checked ? "true" : "false" });
+  download("/admin/transcripts/finetune.jsonl?" + q, "lta-finetune-" + s + "_" + en + ".jsonl");
+};
+window.refreshAll();
+</script>
+</body>
+</html>

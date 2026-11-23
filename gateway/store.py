@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Device registry and request-metadata log.
 
-Only request metadata is stored. Prompt and completion text are never
-written to the database.
+The database holds metadata only. Full conversations (when enabled) are
+written by ``transcripts.py`` as JSON Lines; ``requests.transcript_ref``
+points at the matching line.
 """
 
 from __future__ import annotations
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS requests (
     cache_write_tokens INTEGER,
     reasoning_tokens  INTEGER,
     cost              REAL,
-    saved             REAL
+    saved             REAL,
+    transcript_ref    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests (ts DESC);
@@ -59,6 +61,7 @@ _NEW_COLUMNS = (
     ("reasoning_tokens", "INTEGER"),
     ("cost", "REAL"),
     ("saved", "REAL"),
+    ("transcript_ref", "TEXT"),
 )
 
 
@@ -194,14 +197,15 @@ def log_request(
     reasoning_tokens: int | None = None,
     cost: float | None = None,
     saved: float | None = None,
-) -> None:
+    transcript_ref: str | None = None,
+) -> int:
     with _db() as conn:
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO requests
                (ts, device_id, device_name, model, status, latency_ms, stream,
                 prompt_tokens, completion_tokens, error,
-                cached_tokens, cache_write_tokens, reasoning_tokens, cost, saved)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                cached_tokens, cache_write_tokens, reasoning_tokens, cost, saved, transcript_ref)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 time.time(),
                 device_id,
@@ -218,8 +222,16 @@ def log_request(
                 reasoning_tokens,
                 cost,
                 saved,
+                transcript_ref,
             ),
         )
+        return int(cur.lastrowid)
+
+
+def get_request(request_id: int) -> dict[str, Any] | None:
+    with _db() as conn:
+        row = conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def recent_requests(
@@ -229,8 +241,9 @@ def recent_requests(
     model: str | None = None,
     failed: bool | None = None,
     before_id: int | None = None,
+    oldest_first: bool = False,
 ) -> list[dict[str, Any]]:
-    """Newest-first request rows. ``after_id`` / ``before_id`` page by request id."""
+    """Newest-first request rows (or oldest-first). ``after_id`` / ``before_id`` page by request id."""
     limit = max(1, min(int(limit), 1000))
     where: list[str] = []
     args: list[Any] = []
@@ -253,7 +266,7 @@ def recent_requests(
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     with _db() as conn:
         rows = conn.execute(
-            f"SELECT * FROM requests {clause} ORDER BY id DESC LIMIT ?", (*args, limit)
+            f"SELECT * FROM requests {clause} ORDER BY id {'ASC' if oldest_first else 'DESC'} LIMIT ?", (*args, limit)
         ).fetchall()
     return [dict(row) for row in rows]
 

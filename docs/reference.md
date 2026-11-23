@@ -8,7 +8,7 @@ Device endpoints require `Authorization: Bearer <device-token>`; admin endpoints
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | none | Liveness probe. |
-| `GET` | `/`, `/requests`, `/revoked` | none | Dashboard, full request log and revoked-devices pages (their data calls need the admin token). |
+| `GET` | `/`, `/requests`, `/conversation`, `/logs`, `/revoked` | none | Dashboard, request log, conversation viewer, log files and revoked-devices pages (their data calls need the admin token). |
 | `GET` | `/setup/LibreThinkerAgent.oxt` | none | The patched extension with the gateway URL embedded; contains no secret. |
 | `GET` | `/setup.sh` | device | Generated installer and config script for that device. |
 | `GET` | `/v1/models` | device | Models this device may use, OpenAI-shaped. |
@@ -17,7 +17,11 @@ Device endpoints require `Authorization: Bearer <device-token>`; admin endpoints
 | `POST` | `/admin/devices` | admin | Create a device; returns its token once. |
 | `POST` | `/admin/devices/{id}/models` | admin | Replace a device's model allow-list; `[]` means all models. |
 | `POST` | `/admin/devices/{id}/revoke` | admin | Revoke immediately. |
-| `GET` | `/admin/logs?limit=100` | admin | Request metadata, newest first. Filters: `device_id`, `model`, `result=ok\|failed`, `after_id`, `before_id`. |
+| `GET` | `/admin/logs?limit=100` | admin | Request metadata, newest first. Filters: `device_id`, `model`, `result=ok\|failed`, `after_id`, `before_id`; `order=asc` for oldest first. Rows carry `transcript_ref` when the full exchange was saved. |
+| `GET` | `/admin/requests/{id}/transcript` | admin | The saved exchange for one request: `{"request": <metadata row>, "transcript": <lta-transcript/1 record>}`. |
+| `GET` | `/admin/transcripts` | admin | Conversation-log status and daily files (`day`, `file`, `bytes`, `compressed`). |
+| `GET` | `/admin/transcripts/file/{name}` | admin | Download one daily file (`2026-11-23.jsonl` or `.jsonl.gz`). |
+| `GET` | `/admin/transcripts/finetune.jsonl?start=YYYY-MM-DD&end=YYYY-MM-DD&reasoning=false` | admin | Successful requests in the range as `{"messages", "tools"}` lines for fine-tuning. |
 | `GET` | `/admin/stats?range=7d&tz=0` | admin | Spend, tokens, cache hit rate and latency totals, per model, PC and day. `range`: `today`, `24h`, `7d`, `30d`, `all`; `tz` is minutes from UTC. |
 | `GET` | `/admin/models` | admin | Models the gateway can serve. |
 
@@ -58,7 +62,8 @@ Errors use OpenAI's shape so LibreOffice shows a readable message, for example:
 │   ├── requirements.txt
 │   ├── setup-pc.sh          Office PC installer; served per device as /setup.sh, or run standalone
 │   ├── smoke_test.sh        Non-destructive health and security checks for a running gateway
-│   ├── backup.sh            Consistent database snapshot (for cron on the server)
+│   ├── transcripts.py       Conversation log: daily JSON Lines files, viewer and fine-tuning export
+│   ├── backup.sh            Database snapshot and conversation-log copy (for cron on the server)
 │   └── .env.example         Template; copy to gateway/.env and fill in
 ├── provision/
 │   └── provision_pc.py      Writes writeragent.json for a Linux PC

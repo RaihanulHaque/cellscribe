@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 
 import packager
 import store
+import transcripts
 
 def _provider_table() -> dict[str, dict[str, Any]]:
     """Upstream providers that have a key configured.
@@ -84,6 +85,11 @@ REASONING_EFFORT = _env("REASONING_EFFORT", "low").strip().lower()
 REASONING_MODELS = tuple(p.strip() for p in _env("REASONING_MODELS", "deepseek/").split(",") if p.strip())
 PUBLIC_URL = _env("PUBLIC_URL", "").rstrip("/")
 OXT_PATH = _env("OXT", "/app/vendor/WriterAgent.oxt")
+# Full conversation log (prompt, document context, tool calls, reply) as JSON
+# Lines in the data volume. TRANSCRIPTS=off keeps metadata only.
+TRANSCRIPTS = _env("TRANSCRIPTS", "on").strip().lower() not in ("0", "off", "false", "no")
+TRANSCRIPT_DIR = _env("TRANSCRIPT_DIR", "") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "transcripts")
+TRANSCRIPT_DAYS = int(_env("TRANSCRIPT_DAYS", "0") or 0)  # 0 = keep forever
 
 app = FastAPI(title="Libre Thinker Agent Gateway", version="0.1.0")
 client: httpx.AsyncClient | None = None
@@ -214,9 +220,21 @@ async def startup() -> None:
     if ADMIN_TOKEN == "replace-with-a-random-admin-token" or len(ADMIN_TOKEN) < 16:
         raise RuntimeError("LIBRETHINKERAGENT_ADMIN_TOKEN must be a random string of at least 16 characters")
     store.configure(DB_PATH)
+    transcripts.configure(TRANSCRIPT_DIR, TRANSCRIPTS)
+    asyncio.create_task(_transcript_maintenance())
     client = httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT, connect=10.0))
     PRICES.update(_load_price_overrides())
     asyncio.create_task(_price_refresher())
+
+
+async def _transcript_maintenance() -> None:
+    """Gzip finished days and apply TRANSCRIPT_DAYS, hourly."""
+    while True:
+        try:
+            await asyncio.to_thread(transcripts.maintain, TRANSCRIPT_DAYS)
+        except Exception as exc:
+            print(f"librethinkeragent: transcript maintenance failed: {exc}", flush=True)
+        await asyncio.sleep(3600)
 
 
 @app.on_event("shutdown")
@@ -392,6 +410,18 @@ async def requests_page() -> Any:
     return _page("requests.html")
 
 
+@app.get("/conversation")
+async def conversation_page() -> Any:
+    """One request's full exchange, readable in the browser."""
+    return _page("conversation.html")
+
+
+@app.get("/logs")
+async def logs_page() -> Any:
+    """Daily conversation-log files and the fine-tuning export."""
+    return _page("logs.html")
+
+
 @app.get("/revoked")
 async def revoked_page() -> Any:
     """Archive of revoked devices, kept off the main dashboard."""
@@ -484,7 +514,7 @@ async def list_models(device: dict[str, Any] = Depends(_require_device)) -> dict
 async def chat_completions(
     request: Request, device: dict[str, Any] = Depends(_require_device)
 ) -> Any:
-    """Proxy a chat completion to Mistral, logging metadata only."""
+    """Proxy a chat completion upstream; log metadata and (if enabled) the full exchange."""
     try:
         body = await request.json()
     except Exception:
@@ -530,6 +560,25 @@ async def chat_completions(
     }
     url = f"{provider['url']}/chat/completions"
 
+    def record(status: int, *, response: dict[str, Any] | None = None, error: str | None = None,
+               usage: dict[str, Any] | None = None, upstream_error: Any = None) -> None:
+        """One request: the transcript line first, then the metadata row pointing at it."""
+        latency = int((time.monotonic() - started) * 1000)
+        ref = None
+        if transcripts.enabled():
+            ref = transcripts.write({
+                "device": {"id": int(device["id"]), "name": device["name"]},
+                "model": model, "provider": provider_name, "stream": stream,
+                "status": status, "latency_ms": latency, "usage": usage or None,
+                "request": {k: v for k, v in payload.items() if k not in ("provider", "stream_options", "usage")},
+                "response": response, "error": error, "upstream_error": upstream_error,
+            })
+        fields = usage_fields(model, usage) if usage is not None else {}
+        store.log_request(
+            device_id=int(device["id"]), device_name=device["name"], model=model, status=status,
+            latency_ms=latency, stream=stream, error=error, transcript_ref=ref, **fields,
+        )
+
     try:
         if stream:
             upstream = await _send_with_retry(
@@ -540,19 +589,12 @@ async def chat_completions(
                 raw = await upstream.aread()
                 await upstream.aclose()
                 content, log_error = _upstream_error(upstream.status_code, raw)
-                store.log_request(
-                    device_id=int(device["id"]),
-                    device_name=device["name"],
-                    model=model,
-                    status=upstream.status_code,
-                    latency_ms=int((time.monotonic() - started) * 1000),
-                    stream=True,
-                    error=log_error,
-                )
+                record(upstream.status_code, error=log_error, upstream_error=content)
                 return JSONResponse(content, status_code=upstream.status_code)
 
             async def relay() -> Any:
                 usage: dict[str, Any] = {}
+                collected = transcripts.StreamCollector()
                 pending = ""
                 try:
                     async for chunk in upstream.aiter_bytes():
@@ -571,21 +613,19 @@ async def chat_completions(
                                 obj = json.loads(data)
                             except json.JSONDecodeError:
                                 continue
-                            found = obj.get("usage") if isinstance(obj, dict) else None
+                            if not isinstance(obj, dict):
+                                continue
+                            found = obj.get("usage")
                             if isinstance(found, dict):
                                 usage = found
+                            collected.feed(obj)
                         yield chunk
                 finally:
                     await upstream.aclose()
-                    store.log_request(
-                        device_id=int(device["id"]),
-                        device_name=device["name"],
-                        model=model,
-                        status=upstream.status_code,
-                        latency_ms=int((time.monotonic() - started) * 1000),
-                        stream=True,
-                        **usage_fields(model, usage),
-                    )
+                    try:
+                        record(upstream.status_code, response=collected.result(), usage=usage)
+                    except Exception as exc:  # logging must never break the reply
+                        print(f"librethinkeragent: logging failed: {exc}", flush=True)
 
             return StreamingResponse(
                 relay(),
@@ -597,48 +637,26 @@ async def chat_completions(
             lambda: client.build_request("POST", url, json=payload, headers=headers),
             stream=False,
         )
-        latency = int((time.monotonic() - started) * 1000)
         if response.status_code >= 400:
             content, log_error = _upstream_error(response.status_code, response.content)
-            store.log_request(
-                device_id=int(device["id"]),
-                device_name=device["name"],
-                model=model,
-                status=response.status_code,
-                latency_ms=latency,
-                stream=False,
-                error=log_error,
-            )
+            record(response.status_code, error=log_error, upstream_error=content)
             return JSONResponse(content, status_code=response.status_code)
-        usage = {}
+        usage, reply = {}, None
         if response.headers.get("content-type", "").startswith("application/json"):
             try:
-                usage = response.json().get("usage") or {}
+                data = response.json()
+                usage = data.get("usage") or {}
+                choice = (data.get("choices") or [{}])[0]
+                reply = {"message": choice.get("message"), "finish_reason": choice.get("finish_reason")}
             except Exception:
                 usage = {}
-        store.log_request(
-            device_id=int(device["id"]),
-            device_name=device["name"],
-            model=model,
-            status=response.status_code,
-            latency_ms=latency,
-            stream=False,
-            **usage_fields(model, usage),
-        )
+        record(response.status_code, response=reply, usage=usage)
         return JSONResponse(
             content=response.json() if response.headers.get("content-type", "").startswith("application/json") else {"error": {"message": "Upstream returned a non-JSON response"}},
             status_code=response.status_code,
         )
     except httpx.HTTPError as exc:
-        store.log_request(
-            device_id=int(device["id"]),
-            device_name=device["name"],
-            model=model,
-            status=502,
-            latency_ms=int((time.monotonic() - started) * 1000),
-            stream=stream,
-            error=str(exc)[:200],
-        )
+        record(502, error=str(exc)[:200])
         raise HTTPException(status_code=502, detail="Upstream request failed")
 
 
@@ -687,6 +705,7 @@ async def admin_logs(
     before_id: int | None = None,
     model: str | None = None,
     result: str = "all",
+    order: str = "desc",
     _: None = Depends(_require_admin),
 ) -> list[dict[str, Any]]:
     """Request metadata, newest first. result: all | ok | failed."""
@@ -698,7 +717,57 @@ async def admin_logs(
         before_id=before_id,
         model=model or None,
         failed=failed,
+        oldest_first=order == "asc",
     )
+
+
+@app.get("/admin/requests/{request_id}/transcript")
+async def admin_transcript(request_id: int, _: None = Depends(_require_admin)) -> dict[str, Any]:
+    """The full logged exchange for one request (see transcripts.py for the format)."""
+    row = store.get_request(request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if not row.get("transcript_ref"):
+        raise HTTPException(status_code=404, detail="No conversation was saved for this request")
+    rec = await asyncio.to_thread(transcripts.read, row["transcript_ref"])
+    if rec is None:
+        raise HTTPException(status_code=404, detail="The saved conversation file is missing (deleted by TRANSCRIPT_DAYS?)")
+    return {"request": row, "transcript": rec}
+
+
+@app.get("/admin/transcripts")
+async def admin_transcript_files(_: None = Depends(_require_admin)) -> dict[str, Any]:
+    """Daily conversation-log files, newest first."""
+    return {"enabled": transcripts.enabled(), "keep_days": TRANSCRIPT_DAYS, "schema": transcripts.SCHEMA,
+            "files": transcripts.files()}
+
+
+@app.get("/admin/transcripts/file/{name}")
+async def admin_transcript_file(name: str, _: None = Depends(_require_admin)) -> Any:
+    path = transcripts.file_path(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="No such log file")
+    media = "application/gzip" if name.endswith(".gz") else "application/x-ndjson"
+    return FileResponse(path, media_type=media, filename=name)
+
+
+@app.get("/admin/transcripts/finetune.jsonl")
+async def admin_finetune_export(
+    start: str, end: str = "", reasoning: bool = False, _: None = Depends(_require_admin)
+) -> StreamingResponse:
+    """Successful exchanges from start..end (YYYY-MM-DD) as {"messages", "tools"} lines."""
+    end = end or start
+    days = [f["day"] for f in transcripts.files() if start <= f["day"] <= end]
+
+    def lines() -> Any:
+        for rec in transcripts.iter_records(days):
+            ex = transcripts.finetune_example(rec, with_reasoning=reasoning)
+            if ex is not None:
+                yield (json.dumps(ex, ensure_ascii=False) + "\n").encode("utf-8")
+
+    name = f"lta-finetune-{start}_{end}.jsonl"
+    return StreamingResponse(lines(), media_type="application/x-ndjson",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 RANGES = {"today": None, "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "all": 0}
