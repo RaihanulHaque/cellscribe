@@ -88,6 +88,7 @@ function requestDetail(r) {
   let html = '<tr class="detail"><td colspan="8"><div class="grid">' +
     parts.map((p) => "<div>" + p[0] + "<br><b>" + escapeHtml(p[1]) + "</b></div>").join("") + "</div>";
   if (r.error) html += '<div class="err" style="margin-top:8px">' + escapeHtml(r.error) + "</div>";
+  if (r.transcript_ref) html += '<div style="margin-top:8px"><a class="btnlink" href="/conversation?id=' + r.id + '">View conversation &rarr;</a></div>';
   return html + "</td></tr>";
 }
 
@@ -96,6 +97,7 @@ function renderHeader(active) {
     "<h1><img src='/assets/logo.svg' alt='' class='logo'>Libre Thinker Agent <span class='sub'>Gateway</span></h1>" +
     '<nav><a href="/" class="' + (active === "dash" ? "on" : "") + '">Dashboard</a>' +
     '<a href="/requests" class="' + (active === "requests" ? "on" : "") + '">All requests</a>' +
+    '<a href="/logs" class="' + (active === "logs" ? "on" : "") + '">Logs</a>' +
     '<a href="/revoked" class="' + (active === "revoked" ? "on" : "") + '">Revoked devices</a></nav>' +
     '<span class="spacer"></span>' +
     '<label class="live" id="liveToggle" title="Refresh automatically"><span class="dot"></span><span id="liveText">Live</span></label>' +
@@ -124,6 +126,23 @@ function startLive(refresh, intervalMs) {
   };
   paint();
   setInterval(() => { if (on && !document.hidden && adminToken && !tokenRejected) refresh(); }, intervalMs);
+}
+
+// Download an admin-only file (fetch with the token header, then save the blob).
+async function download(path, filename) {
+  const res = await fetch(path, { headers: { "X-Admin-Token": adminToken } });
+  if (!res.ok) { toast("Download failed: HTTP " + res.status); return; }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function bytes(n) {
+  if (n >= 1 << 30) return (n / (1 << 30)).toFixed(2) + " GB";
+  if (n >= 1 << 20) return (n / (1 << 20)).toFixed(1) + " MB";
+  if (n >= 1 << 10) return (n / (1 << 10)).toFixed(0) + " KB";
+  return n + " B";
 }
 
 function setAuth(ok, message) {

@@ -21,6 +21,9 @@ check "health"                          200 "$(code "$base/healthz")"
 check "dashboard page"                  200 "$(code "$base/")"
 check "requests page"                   200 "$(code "$base/requests")"
 check "revoked page"                    200 "$(code "$base/revoked")"
+check "conversation page"               200 "$(code "$base/conversation")"
+check "logs page"                       200 "$(code "$base/logs")"
+check "conversation log refuses no token" 401 "$(code "$base/admin/transcripts")"
 check "admin API refuses no token"      401 "$(code "$base/admin/devices")"
 check "model list refuses no token"     401 "$(code "$base/v1/models")"
 check "extension download"              200 "$(code "$base/setup/LibreThinkerAgent.oxt")"
@@ -32,6 +35,7 @@ curl -s -D - -o /dev/null -m 10 "$base/healthz" | grep -qi '^x-content-type-opti
 if [ -n "$admin" ]; then
   check "admin API with token"          200 "$(code -H "X-Admin-Token: $admin" "$base/admin/devices")"
   check "admin stats"                   200 "$(code -H "X-Admin-Token: $admin" "$base/admin/stats")"
+  check "conversation log status"       200 "$(code -H "X-Admin-Token: $admin" "$base/admin/transcripts")"
 else
   echo "SKIP  admin API checks (no LIBRETHINKERAGENT_ADMIN_TOKEN)"
 fi

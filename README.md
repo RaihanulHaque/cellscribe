@@ -115,7 +115,8 @@ What Libre Thinker Agent offers today. Typical requests: "Summarise this sheet f
 - Install by one `.oxt` file plus a pasted token, or one generated setup script.
 - Live admin dashboard: spend by day, by model and by PC, real billed cost with prompt-cache detail,
   latency percentiles, recent requests, a full filterable request log, and an archive of revoked PCs.
-- Request metadata only is stored; prompts and document text never are.
+- Full conversation log (prompt, document context, tool calls, reply) as JSON Lines, viewable in the
+  browser and exportable for fine-tuning. It can be switched off to keep metadata only.
 - Plain-language progress lines in the sidebar ("Writing to O1:R6...") instead of tool names.
 
 ---
@@ -146,11 +147,11 @@ sequenceDiagram
     GW->>AI: Same request, with the provider's key added
     AI-->>GW: Streamed reply
     GW-->>PC: Streamed reply
-    GW->>DB: Log metadata only (no prompts, no document text)
+    GW->>DB: Log metadata, and the full exchange to the conversation log
 ```
 
-Only the gateway ever holds the provider key. It retries brief network failures and never stores
-prompts or document text.
+Only the gateway ever holds the provider key. It retries brief network failures and saves each
+exchange to the conversation log (see [Conversation logs](#conversation-logs)).
 
 WriterAgent reads its settings from `writeragent.json` in the LibreOffice profile and re-reads it
 within seconds of a change, so central changes apply without restarting LibreOffice.
@@ -256,7 +257,7 @@ restart LibreOffice, and paste the token under **Tools → Libre Thinker Agent: 
    extension download, security headers, admin API). Add `DEVICE_TOKEN=lta_... ` to also send one
    tiny chat request. It creates nothing, so it leaves no test devices behind.
 6. **Back up.** `./backup.sh` writes a consistent database snapshot to `gateway/backups/` and keeps the
-   newest 14; run it from cron, e.g. `0 2 * * * cd /opt/libre-agent/gateway && ./backup.sh`.
+   newest 14, and copies the conversation logs to `gateway/backups/transcripts/`; run it from cron, e.g. `0 2 * * * cd /opt/libre-agent/gateway && ./backup.sh`.
 7. **Update.** `git pull && docker compose up -d --build`. Data lives in the compose volume and
    survives rebuilds. Then reinstall the extension on PCs only if it changed.
 8. **Logs.** `docker compose logs -f --tail=50`. Container logs rotate (3 files of 10 MB).
@@ -332,6 +333,9 @@ All settings are environment variables in `gateway/.env`.
 | `LIBRETHINKERAGENT_BIND` | no | `0.0.0.0` | Address the published port binds to (read by `docker-compose.yml`). Use `127.0.0.1` behind a proxy on the same host. |
 | `LIBRETHINKERAGENT_MAX_BODY_MB` | no | `20` | Largest request body accepted; bigger ones get HTTP 413. |
 | `LIBRETHINKERAGENT_DB` | no | `/data/librethinkeragent.db` | SQLite path inside the container. |
+| `LIBRETHINKERAGENT_TRANSCRIPTS` | no | `on` | Save every request in full to the conversation log. `off` keeps metadata only. |
+| `LIBRETHINKERAGENT_TRANSCRIPT_DAYS` | no | `0` | Delete conversation-log days older than this. `0` keeps them forever. |
+| `LIBRETHINKERAGENT_TRANSCRIPT_DIR` | no | `transcripts/` next to the database | Where the daily log files are written inside the container. |
 | `LIBRETHINKERAGENT_OXT` | no | `/app/vendor/WriterAgent.oxt` | Base extension package the gateway patches into `LibreThinkerAgent.oxt`. |
 
 Data persists in the compose volume (it appears as `gateway_librethinkeragent-data`), so restarts keep
@@ -379,6 +383,45 @@ The page refreshes itself every few seconds (the **Live** switch in the header p
   Registering a PC is in a collapsible panel at the bottom.
 - **Revoked devices** (`/revoked`): revoked PCs move off the main page into this archive, with
   their creation and revoke dates and total usage, and a search box.
+- **Conversation** (`/conversation?id=N`, or **View conversation** under any request row): the whole
+  exchange as the model saw it: system instructions, the user's message and document context, each
+  tool call with its arguments and result, and the model's reply and reasoning. **Earlier** and
+  **Later** step through the same PC's requests; **Download JSON** saves the record.
+- **Logs** (`/logs`): the daily log files to download, and the fine-tuning export.
+
+### Conversation logs
+
+Every request is saved in full to `transcripts/` in the data volume, one file per day in
+[JSON Lines](https://jsonlines.org/) (one JSON object per line). Today's file is
+`2026-11-23.jsonl`; finished days are gzipped to `.jsonl.gz` within the hour. Both are standard
+formats that any language, `jq`, pandas or Hugging Face `datasets` reads directly.
+
+Each line is one request, schema `lta-transcript/1`:
+
+```json
+{"schema": "lta-transcript/1", "id": "…", "time": "2026-11-23T05:37:07Z",
+ "device": {"id": 3, "name": "Accounts PC"}, "model": "deepseek/deepseek-v4.1-flash-1017",
+ "provider": "openrouter", "stream": true, "status": 200, "latency_ms": 1900, "usage": {…},
+ "request":  {"messages": [ … ], "tools": [ … ], "temperature": …},
+ "response": {"message": {"role": "assistant", "content": null,
+                          "tool_calls": [{"function": {"name": "get_weather", "arguments": "{…}"}}],
+                          "reasoning": "…"},
+              "finish_reason": "tool_calls"},
+ "error": null}
+```
+
+`request.messages` plus `response.message` is the whole exchange in the OpenAI chat format. The
+agent sends one request per tool round, so a task that takes four tool calls is four lines, each
+holding the conversation so far. Failed requests are logged too, with `error` set.
+
+**Fine-tuning export.** On the Logs page, pick a date range and **Download .jsonl**. It writes one
+`{"messages": [...], "tools": [...]}` line per successful request, the format read by OpenAI
+fine-tuning, Unsloth, Axolotl and TRL. Tick **include reasoning** to keep the model's reasoning.
+Review the data before training: it contains whatever staff typed and the documents they opened.
+
+**Size.** Each request carries the document context, often 20 to 80 KB of text, so expect tens of
+MB per busy day before gzip and a few MB after. `backup.sh` copies the files to
+`gateway/backups/transcripts/`.
 
 **Where cost comes from.** For OpenRouter models the gateway records the cost OpenRouter itself
 reports, so cache discounts are already included. Other models are priced from `LIBRETHINKERAGENT_PRICES`;
@@ -405,7 +448,10 @@ The admin token is kept in the browser's `localStorage`, so use a trusted machin
 - Revocation takes effect on the device's next request. Treat a token pasted into a chat or ticket
   as leaked.
 - Rotate provider keys by editing `gateway/.env` and running `docker compose up -d --force-recreate`.
-- Request logging is metadata only; prompts and document text are not stored.
+- **The conversation log holds document content.** Every prompt, the document text sent with it and
+  every reply are saved on the gateway's data volume (and in `backup.sh` copies). Anyone with the
+  admin token can read them. Set `LIBRETHINKERAGENT_TRANSCRIPTS=off` for metadata only, or
+  `LIBRETHINKERAGENT_TRANSCRIPT_DAYS` to delete old days.
 - Built-in protections: the admin token is compared in constant time, ten wrong admin logins from one address block that address for five minutes (HTTP 429), request bodies over 20 MB are refused, and every response carries `nosniff`, `X-Frame-Options: DENY` and `no-referrer` headers (dashboard pages are also `no-store`).
 - **Document content still goes to the model provider** (OpenRouter and the host it routes to, or
   Mistral). The gateway protects the key, not the content. Confirm company policy allows this. To

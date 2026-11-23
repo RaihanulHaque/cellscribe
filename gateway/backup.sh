@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Consistent snapshot of the gateway database (devices, tokens' hashes, request log).
-#   ./backup.sh [directory]     default: ./backups, keeps the newest 14
+# Consistent snapshot of the gateway database (devices, tokens' hashes, request log)
+# and a copy of the conversation logs (transcripts/, synced, never pruned here).
+#   ./backup.sh [directory]     default: ./backups, keeps the newest 14 databases
 # Run it from cron on the server, e.g.:  0 2 * * * cd /opt/libre-agent/gateway && ./backup.sh
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -18,3 +19,9 @@ sys.stdout.buffer.write(open(tmp, 'rb').read()); os.remove(tmp)
 chmod 600 "$out"
 python3 -c "import sqlite3,sys; print('backup ok:', sys.argv[1], '-', sqlite3.connect(sys.argv[1]).execute('select count(*) from devices').fetchone()[0], 'devices')" "$out"
 ls -1t "$dir"/librethinkeragent-*.db | tail -n +15 | xargs -r rm --
+
+# Conversation logs: daily .jsonl(.gz) files; only new or changed days are copied.
+mkdir -p "$dir/transcripts"
+docker compose exec -T librethinkeragent-gateway sh -c 'd=$(dirname "$LIBRETHINKERAGENT_DB")/transcripts; [ -d "$d" ] && tar -C "$d" -cf - . || true' \
+  | tar -C "$dir/transcripts" -xf - --keep-newer-files 2>/dev/null || true
+echo "transcripts: $(ls "$dir/transcripts" 2>/dev/null | wc -l) day file(s) in $dir/transcripts"
