@@ -414,6 +414,41 @@ Each line is one request, schema `lta-transcript/1`:
 agent sends one request per tool round, so a task that takes four tool calls is four lines, each
 holding the conversation so far. Failed requests are logged too, with `error` set.
 
+#### Reading a conversation page
+
+Each row in the request log is **one trip to the model**. The model remembers nothing between
+trips, so the sidebar sends the whole chat so far every time. The page shows that trip in two parts:
+
+- **Conversation sent to the model**: the history. All of it existed before this request.
+- **Model reply**: the one new thing the model returned on this trip. Only this part is new.
+
+The history is made of four kinds of block:
+
+| Block | What it is |
+| --- | --- |
+| **System instructions** (folded) | The fixed instructions the sidebar sends every time: how to behave and which tools exist. |
+| **User** | What the person typed, often followed by the document or sheet content the sidebar attached. |
+| **Assistant** | Something the model produced on an earlier trip: either an answer shown in the sidebar (plain text), or a **tool call** (a green function name with its arguments below). |
+| **Tool result** | What LibreOffice reported back after running that tool call, e.g. "inserted 3 paragraphs" or the cell values it read. |
+
+**Example.** "Make a flowchart of purchase approval" takes two trips, so it appears as two rows:
+
+| Row | Sent to the model | Model reply (new) |
+| --- | --- | --- |
+| 1 | User: *make a flowchart…* | Tool call `draw_flowchart(…)` |
+| 2 | User, Assistant (that tool call), Tool result: *drawn, 7 steps* | "Done, I drew a 7-step flowchart." |
+
+Row 2 repeats row 1's tool call as history. The newest row of a task shows the whole story, so to
+follow what happened, open the last request of the task and read top to bottom.
+
+**HTML in an Assistant block.** In Writer, text the model writes *into the document* is sent as
+HTML (`<h1>`, `<p>`, `<b>`, `<table>`) and LibreOffice turns it into real formatting. If the HTML
+sits inside a tool-call box (for example `apply_document_content`), it is the content written into
+the document, not what the sidebar showed. Chat answers in the sidebar are plain text.
+
+**For fine-tuning**, the history is the input and the model reply is the answer the model should
+learn to give.
+
 **Fine-tuning export.** On the Logs page, pick a date range and **Download .jsonl**. It writes one
 `{"messages": [...], "tools": [...]}` line per successful request, the format read by OpenAI
 fine-tuning, Unsloth, Axolotl and TRL. Tick **include reasoning** to keep the model's reasoning.
